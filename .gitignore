@@ -1,0 +1,41 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.cache
+*.log
+
+# Build results
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# NuGet packages
+packages/
+*.nupkg
+
+# Executable / libraries
+*.exe
+*.dll
+*.pdb
+
+# AI / model / training files
+*.onnx
+*.pth
+*.pt
+*.weights
+*.hdl
+*.hdev
+*.hdict
+
+# datasets and outputs
+dataset/
+datasets/
+images/
+runs/
+outputs/
+训练*/
+相机1深度学习模板/
