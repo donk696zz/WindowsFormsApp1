@@ -17,7 +17,7 @@ namespace WindowsFormsApp1
         public static 参数界面 canshujiemian = new 参数界面();
         public static 登录页面 denglujiemian=new 登录页面();
         public static 调试页面 tiaoshijiemian=new 调试页面();
-        public static 配方页面 peifangjiemian=new 配方页面();
+        public static 料号设置页面 liaohaoshezhijiemian = new 料号设置页面();
         public static 相机设置 xiangjishezhijiemian=new 相机设置();
        
         
@@ -34,11 +34,12 @@ namespace WindowsFormsApp1
             xiangjishezhijiemian.LogAdded += (int1, string2) => { 信息1.AddLog(int1, string2); };
             zidongjiemian.LogAdded += (int1, string2) => { 信息1.AddLog(int1, string2); };
             tiaoshijiemian.LogAdded += (int1, string2) => { 信息1.AddLog(int1, string2); };
-            peifangjiemian.LogAdded += (int1, string2) => { 信息1.AddLog(int1, string2); };
+            liaohaoshezhijiemian.LogAdded += (int1, string2) => { 信息1.AddLog(int1, string2); };
             canshujiemian.LogAdded += (int1, string2) => { 信息1.AddLog(int1, string2); };
+            canshujiemian.PreviewRequested += tiaoshijiemian.预览当前图片;
+            denglujiemian.登录成功 += 显示参数页面;
             
 
-            裁图类.日志信息 = 信息1;
             ShowFormInPanel(zidongjiemian, splitContainer1.Panel1);
          
             
@@ -60,36 +61,14 @@ namespace WindowsFormsApp1
                 zidongjiemian.相机连接(); // 此时事件已绑定 → 日志必输出！
                 
             }
-            // ==============================================
-            // 【关键】在切换前，判断当前显示的是什么窗体
-            // 如果是【调试页面】或【相机设置】，就清空它的图片
-            // ==============================================
-            if (panel.Controls.Count > 0)
+            // 页面采用缓存切换：离开时只隐藏，不清空图片、不移除窗体。
+            // 这样调试页的当前图片、文件夹索引和检测结果都能保留，
+            // 参数页也可以在调试页隐藏期间刷新预览结果。
+            foreach (Form oldForm in panel.Controls.OfType<Form>())
             {
-                // 获取当前正在显示的旧窗体
-                Form oldForm = panel.Controls[0] as Form;
-
-                if (oldForm != null)
-                {
-                    // ----------------------
-                    // 只清空这两个窗体！
-                    // ----------------------
-                    if (oldForm is 调试页面 || oldForm is 配方页面)
-                    {
-                        // 【深度遍历】找到窗体里所有 halcon 控件（不管包几层都能找到）
-                        foreach (var c in GetAllControls(oldForm))
-                        {
-                            if (c is halcon hc)
-                            {
-                                hc.ClearDisplay(); // 清空
-                                状态.控制放大缩小后图片的显示 = false;
-                            }
-                        }
-                    }
-                }
+                if (!ReferenceEquals(oldForm, form) && oldForm.Visible)
+                    oldForm.Hide();
             }
-            // 清空容器里的所有控件
-            panel.Controls.Clear();
             // 必须设置：将窗口改为非顶层窗口（才能嵌入Panel）
             form.TopLevel = false;
             // 隐藏窗口边框（嵌入后更美观）
@@ -97,10 +76,12 @@ namespace WindowsFormsApp1
             // 根据当前笔记本分辨率和 DPI 进行运行时布局适配
             // 让窗口自动填满 panel
             form.Dock = DockStyle.Fill;
-            // 将窗口添加到 panel 容器中
-            panel.Controls.Add(form);
+            // 第一次打开时加入容器，后续切换复用同一个窗体实例。
+            if (!panel.Controls.Contains(form))
+                panel.Controls.Add(form);
             // 显示窗口
             form.Show();
+            form.BringToFront();
 
         }
        
@@ -135,15 +116,7 @@ namespace WindowsFormsApp1
         {
             if (状态.登录权限)
             {
-                ShowFormInPanel(canshujiemian, splitContainer1.Panel1);
-                自动ToolStripMenuItem.BackColor = Color.White;
-                参数界面ToolStripMenuItem.BackColor = Color.CornflowerBlue;
-                相机设置ToolStripMenuItem.BackColor = Color.White;
-                登录界面ToolStripMenuItem.BackColor = Color.White;
-                配方界面ToolStripMenuItem.BackColor = Color.White;
-                调试界面ToolStripMenuItem.BackColor = Color.White;
-                料号添加ToolStripMenuItem.BackColor = Color.White;
-
+                显示参数页面();
             }
             else
             {
@@ -161,9 +134,21 @@ namespace WindowsFormsApp1
             }
         }
 
+        private void 显示参数页面()
+        {
+            ShowFormInPanel(canshujiemian, splitContainer1.Panel1);
+            自动ToolStripMenuItem.BackColor = Color.White;
+            参数界面ToolStripMenuItem.BackColor = Color.CornflowerBlue;
+            相机设置ToolStripMenuItem.BackColor = Color.White;
+            登录界面ToolStripMenuItem.BackColor = Color.White;
+            配方界面ToolStripMenuItem.BackColor = Color.White;
+            调试界面ToolStripMenuItem.BackColor = Color.White;
+            料号添加ToolStripMenuItem.BackColor = Color.White;
+        }
+
         private void 配方界面ToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            ShowFormInPanel(peifangjiemian, splitContainer1.Panel1);
+            ShowFormInPanel(liaohaoshezhijiemian, splitContainer1.Panel1);
 
             自动ToolStripMenuItem.BackColor = Color.White;
             参数界面ToolStripMenuItem.BackColor = Color.White;
@@ -203,21 +188,6 @@ namespace WindowsFormsApp1
             料号添加ToolStripMenuItem.BackColor = Color.White;
 
         }
-        // 👇 必须加这个辅助方法：遍历所有控件
-        public IEnumerable<Control> GetAllControls(Control parent)// 功能：找到一个容器（窗体/Panel）里面的**所有控件**，包括嵌套在里面的
-        {
-            // 1. 遍历父容器里【直接放在里面】的每一个控件
-            foreach (Control c in parent.Controls)
-            {
-                // 2. 先返回这个控件（告诉外面：我找到一个）
-                yield return c;
-                // 3. 重点！递归：再进入这个控件的内部，找它的子控件
-                // 比如：Panel 里面的 GroupBox 里面的 halcon1
-                foreach (var child in GetAllControls(c))
-                    yield return child;
-            }
-        }
-
         private void 底层页面_FormClosing(object sender, FormClosingEventArgs e)
         {
             zidongjiemian.关闭相机();
@@ -226,8 +196,7 @@ namespace WindowsFormsApp1
 
         private void 底层页面_Shown(object sender, EventArgs e)
         {
-            信息1.AddLog(0, "深度学习模型与设备连接中.......");
-            zidongjiemian.深度学习数据上传();
+            信息1.AddLog(0, "检测参数与相机设备初始化中.......");
             zidongjiemian.电脑设备连接();
             
         }

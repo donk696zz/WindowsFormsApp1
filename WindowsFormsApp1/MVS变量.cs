@@ -20,7 +20,7 @@ namespace WindowsFormsApp1
         // 海康相机SDK实例对象
         public MyCamera Cam;
 
-        // 相机编号 0=相机1 / 1=相机2 / 2=相机3 / 3=相机4
+        // 设备角色索引：0=检测相机，1=分类相机
         public int 相机编号;
 
         // 相机是否已经打开
@@ -145,14 +145,11 @@ namespace WindowsFormsApp1
                 double 曝光 = 10000;
                 double 增益 = 10;
 
-                // 根据相机编号自动匹配参数
-                switch (相机编号)
-                {
-                    case 0: 曝光 = double.Parse(数据变量.相机1曝光时间); 增益 = double.Parse(数据变量.相机1增益); break;
-                    case 1: 曝光 = double.Parse(数据变量.相机2曝光时间); 增益 = double.Parse(数据变量.相机2增益); break;
-                    case 2: 曝光 = double.Parse(数据变量.相机3曝光时间); 增益 = double.Parse(数据变量.相机3增益); break;
-                    case 3: 曝光 = double.Parse(数据变量.相机4曝光时间); 增益 = double.Parse(数据变量.相机4增益); break;
-                }
+                CameraRoleParameters parameters = 相机编号 == 0
+                    ? VisionParameterStore.ApplicationParameters.DetectionCamera
+                    : VisionParameterStore.ApplicationParameters.ClassificationCamera;
+                曝光 = parameters.Exposure;
+                增益 = parameters.Gain;
 
                 // 关闭自动曝光 → 设置手动曝光
                 nRet |= Cam.MV_CC_SetEnumValue_NET("ExposureAuto", 0);

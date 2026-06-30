@@ -12,74 +12,151 @@ namespace WindowsFormsApp1
     public partial class 自动页面 : Form
     {
         private const int 最大相机数量 = 2;
-        private const string 默认模型路径 = @"E:\source\DEIM\checkpoints\deim_dfine_hgnetv2_n_coco_160e.onnx";
 
         public event Action<int, string> LogAdded;
         private readonly List<MVS变量> 相机列表 = new List<MVS变量>();
         private readonly object 计数锁 = new object();
-        private readonly object 推理锁 = new object();
         private readonly halcon[] 图像显示控件;
         private volatile bool 检测中;
-        private DeimOnnxDetector 检测器;
 
         public int[] 拍照总数 = new int[最大相机数量];
         public int[] OK = new int[最大相机数量];
         public int[] NG = new int[最大相机数量];
 
+
         public 自动页面()
         {
             InitializeComponent();
-            图像显示控件 = new[] { halcon1, halcon2, halcon3, halcon4 };
+            图像显示控件 = new[] { halcon1, halcon2 };
+            if (System.ComponentModel.LicenseManager.UsageMode ==
+                System.ComponentModel.LicenseUsageMode.Designtime)
+                return;
             button1.Text = "开始检测";
             button1.BackColor = Color.IndianRed;
             button1.ForeColor = Color.White;
 
-            int 相机数量 = 1;
-            int.TryParse(Properties.Settings.Default.相机数量设置, out 相机数量);
-            调整控件布局(Math.Max(1, Math.Min(最大相机数量, 相机数量)));
+            try
+            {
+                调整控件布局();
+            }
+            catch (InvalidOperationException)
+            {
+                // 构造阶段 SplitContainer 句柄和尺寸可能还没稳定，显示后会重新布局。
+            }
         }
 
-        public void 深度学习数据上传()
+        private bool _isAligningCameraLayout = false;
+
+        private void AlignCameraTopAndImageLayout()
         {
-            string modelPath = Environment.GetEnvironmentVariable("DEIM_ONNX_MODEL");
-            if (string.IsNullOrWhiteSpace(modelPath) &&
-                File.Exists(Properties.Settings.Default.相机1hdl文件路径) &&
-                string.Equals(Path.GetExtension(Properties.Settings.Default.相机1hdl文件路径), ".onnx", StringComparison.OrdinalIgnoreCase))
-                modelPath = Properties.Settings.Default.相机1hdl文件路径;
-            if (string.IsNullOrWhiteSpace(modelPath))
-                modelPath = 默认模型路径;
+            if (_isAligningCameraLayout)
+                return;
+
+            _isAligningCameraLayout = true;
 
             try
             {
-                检测器?.Dispose();
-                检测器 = new DeimOnnxDetector(modelPath, 0.4f);
-                LogAdded?.Invoke(1, "DEIM ONNX模型加载成功：" + modelPath);
+                // 1. 先固定右侧按钮区宽度
+                int buttonPanelWidth = 230; // 可根据你按钮实际宽度调，图二大概 220~240 合适
+
+                if (splitContainer1 != null && splitContainer1.ClientSize.Width > splitContainer1.SplitterWidth + 40)
+                {
+                    splitContainer1.Orientation = Orientation.Vertical;
+                    splitContainer1.FixedPanel = FixedPanel.Panel2;
+                    splitContainer1.IsSplitterFixed = true;
+
+                    int availableWidth = splitContainer1.ClientSize.Width - splitContainer1.SplitterWidth;
+                    int panel2Width = Math.Min(buttonPanelWidth, Math.Max(80, availableWidth / 3));
+                    int panel1MinSize = Math.Min(200, Math.Max(1, availableWidth - panel2Width));
+
+                    splitContainer1.Panel2MinSize = Math.Max(1, Math.Min(panel2Width, availableWidth - 1));
+                    splitContainer1.Panel1MinSize = panel1MinSize;
+
+                    int targetDistance =
+                        splitContainer1.ClientSize.Width
+                        - panel2Width
+                        - splitContainer1.SplitterWidth;
+
+                    int maxDistance =
+                        splitContainer1.ClientSize.Width
+                        - splitContainer1.SplitterWidth
+                        - splitContainer1.Panel2MinSize;
+
+                    targetDistance = Math.Max(splitContainer1.Panel1MinSize, Math.Min(targetDistance, maxDistance));
+
+                    if (targetDistance > 0 && targetDistance <= maxDistance)
+                        splitContainer1.SplitterDistance = targetDistance;
+                }
+
+                // 2. 关键：让上方统计区分割线对齐下方 Halcon 分割线
+                // 下面两个名字请换成你自己 Designer 里的真实控件名
+                if (splitContainerStats != null &&
+                    splitContainerImages != null &&
+                    !splitContainerImages.Panel2Collapsed &&
+                    splitContainerStats.ClientSize.Width > 0 &&
+                    splitContainerImages.ClientSize.Width > 0)
+                {
+                    int imageSplitterX = splitContainerImages.SplitterDistance;
+
+                    int maxStatsDistance =
+                        splitContainerStats.ClientSize.Width
+                        - splitContainerStats.SplitterWidth
+                        - splitContainerStats.Panel2MinSize;
+
+                    int minStatsDistance = splitContainerStats.Panel1MinSize;
+
+                    if (maxStatsDistance < minStatsDistance)
+                        return;
+
+                    imageSplitterX = Math.Max(minStatsDistance, Math.Min(imageSplitterX, maxStatsDistance));
+
+                    if (imageSplitterX > 0 && imageSplitterX <= maxStatsDistance)
+                        splitContainerStats.SplitterDistance = imageSplitterX;
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                检测器 = null;
-                LogAdded?.Invoke(0, "DEIM ONNX模型加载失败：" + ex.Message);
+                _isAligningCameraLayout = false;
+            }
+        }
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+
+            BeginAlignCameraLayout();
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+
+            BeginAlignCameraLayout();
+        }
+
+        private void BeginAlignCameraLayout()
+        {
+            if (!IsHandleCreated || IsDisposed || Disposing)
+                return;
+
+            try
+            {
+                BeginInvoke(new Action(AlignCameraTopAndImageLayout));
+            }
+            catch (InvalidOperationException)
+            {
+                // 窗体句柄正在创建/销毁时忽略本次布局，下一次 SizeChanged/Load 会重新调整。
             }
         }
 
         public void 电脑设备连接()
         {
-            LogAdded?.Invoke(检测器 == null ? 0 : 1,
-                检测器 == null ? "ONNX检测器尚未就绪。" : "ONNX Runtime CPU推理已就绪。");
+            LogAdded?.Invoke(1, "OpenCV规则检测已就绪，复检结果不会自动放行为OK。");
         }
 
-        public DetectionResult 检测图片文件(string imagePath)
+        public ModuleInspectionResult 检测图片文件(string imagePath)
         {
-            if (检测器 == null)
-                深度学习数据上传();
-            if (检测器 == null)
-                throw new InvalidOperationException("DEIM ONNX模型未加载。");
-
             using (Mat image = OpenCvImageHelper.LoadImage(imagePath))
-            {
-                lock (推理锁)
-                    return 检测器.Detect(image);
-            }
+                return ModuleInspector.Inspect(image);
         }
 
         public void 相机连接()
@@ -87,9 +164,7 @@ namespace WindowsFormsApp1
             try
             {
                 释放已连接相机();
-                if (!int.TryParse(Properties.Settings.Default.相机数量设置, out int 相机数量) ||
-                    相机数量 < 1 || 相机数量 > 最大相机数量)
-                    throw new InvalidOperationException("相机数量必须在1到4之间。");
+                const int 相机数量 = 最大相机数量;
 
                 var 设备列表 = new MyCamera.MV_CC_DEVICE_INFO_LIST();
                 int 枚举结果 = MyCamera.MV_CC_EnumDevices_NET(
@@ -109,14 +184,14 @@ namespace WindowsFormsApp1
                     if (result != 0)
                     {
                         相机.关闭相机();
-                        throw new InvalidOperationException($"相机{i + 1}打开失败，错误码：0x{result:X8}");
+                        throw new InvalidOperationException($"{获取相机名称(i)}打开失败，错误码：0x{result:X8}");
                     }
 
                     result = 相机.设置曝光增益();
                     if (result != 0)
                     {
                         相机.关闭相机();
-                        throw new InvalidOperationException($"相机{i + 1}曝光或增益设置失败，错误码：0x{result:X8}");
+                        throw new InvalidOperationException($"{获取相机名称(i)}曝光或增益设置失败，错误码：0x{result:X8}");
                     }
 
                     相机.图像已到达 += 相机图像已到达;
@@ -125,13 +200,13 @@ namespace WindowsFormsApp1
                     {
                         相机.图像已到达 -= 相机图像已到达;
                         相机.关闭相机();
-                        throw new InvalidOperationException($"相机{i + 1}硬触发采集失败，错误码：0x{result:X8}");
+                        throw new InvalidOperationException($"{获取相机名称(i)}硬触发采集失败，错误码：0x{result:X8}");
                     }
                     相机列表.Add(相机);
                 }
 
                 相机变量.CameraList = 相机列表;
-                LogAdded?.Invoke(1, $"已连接{相机数量}台相机，正在等待硬触发。");
+                LogAdded?.Invoke(1, "检测相机和分类相机已连接，正在等待硬触发。");
             }
             catch (Exception ex)
             {
@@ -158,26 +233,23 @@ namespace WindowsFormsApp1
                 using (Mat original = OpenCvImageHelper.ConvertPtrToMat(
                     imagePointer, frameInfo.nWidth, frameInfo.nHeight, 1))
                 {
-                    DetectionResult detection;
-                    if (检测器 == null)
-                        throw new InvalidOperationException("DEIM ONNX模型未加载。");
-                    lock (推理锁)
-                        detection = 检测器.Detect(original);
-
-                    using (detection.AnnotatedImage)
+                    using (ModuleInspectionResultScope detection =
+                        new ModuleInspectionResultScope(ModuleInspector.Inspect(original)))
                     {
-                        登记检测结果(cameraIndex, detection.IsOk);
+                        ModuleInspectionResult result = detection.Result;
+                        bool finalIsOk = result.Decision == ModuleInspectionDecision.Ok;
+                        登记检测结果(cameraIndex, result.Decision);
                         resultRecorded = true;
-                        int outputCode = 相机列表[cameraIndex].输出检测结果(detection.IsOk);
+                        int outputCode = 相机列表[cameraIndex].输出检测结果(finalIsOk);
                         if (outputCode != 0)
-                            LogAdded?.Invoke(0, $"相机{cameraIndex + 1}结果输出失败：0x{outputCode:X8}");
+                            LogAdded?.Invoke(0, $"{获取相机名称(cameraIndex)}结果输出失败：0x{outputCode:X8}");
 
                         保存图片(original, cameraIndex, 0);
-                        保存图片(detection.AnnotatedImage, cameraIndex, detection.IsOk ? 1 : 2);
-                        更新检测界面(cameraIndex, detection);
-                        LogAdded?.Invoke(detection.IsOk ? 1 : 0,
-                            $"相机{cameraIndex + 1}判断{(detection.IsOk ? "OK" : "NG")}，" +
-                            $"目标{detection.Detections.Count}个，耗时{detection.ElapsedMilliseconds}ms。");
+                        Mat display = finalIsOk ? result.AnnotatedImage : result.ErrorImage;
+                        保存图片(display, cameraIndex, finalIsOk ? 1 : 2);
+                        更新检测界面(cameraIndex, display);
+                        LogAdded?.Invoke(finalIsOk ? 1 : 0,
+                            $"{获取相机名称(cameraIndex)}判断{获取判定名称(result.Decision)}，{result.ReasonText}");
                     }
                 }
             }
@@ -185,28 +257,29 @@ namespace WindowsFormsApp1
             {
                 if (!resultRecorded)
                 {
-                    登记检测结果(cameraIndex, false);
+                    登记检测结果(cameraIndex, ModuleInspectionDecision.Ng);
                     int code = 相机列表[cameraIndex].输出检测结果(false);
                     if (code != 0)
-                        LogAdded?.Invoke(0, $"相机{cameraIndex + 1}故障NG输出失败：0x{code:X8}");
+                        LogAdded?.Invoke(0, $"{获取相机名称(cameraIndex)}故障NG输出失败：0x{code:X8}");
                 }
-                LogAdded?.Invoke(0, $"相机{cameraIndex + 1}检测异常，已按NG处理：{ex.Message}");
+                LogAdded?.Invoke(0, $"{获取相机名称(cameraIndex)}检测异常，已按NG处理：{ex.Message}");
             }
         }
 
-        private void 登记检测结果(int cameraIndex, bool isOk)
+        private void 登记检测结果(int cameraIndex, ModuleInspectionDecision decision)
         {
+            bool isOk = decision == ModuleInspectionDecision.Ok;
             lock (计数锁)
             {
                 拍照总数[cameraIndex]++;
                 if (isOk) OK[cameraIndex]++; else NG[cameraIndex]++;
             }
-            更新计数与状态界面(cameraIndex, isOk);
+            更新计数与状态界面(cameraIndex, decision);
         }
 
-        private void 更新检测界面(int cameraIndex, DetectionResult detection)
+        private void 更新检测界面(int cameraIndex, Mat image)
         {
-            Bitmap bitmap = OpenCvImageHelper.ConvertMatToBitmap(detection.AnnotatedImage);
+            Bitmap bitmap = OpenCvImageHelper.ConvertMatToBitmap(image);
             if (IsDisposed || !IsHandleCreated)
             {
                 bitmap.Dispose();
@@ -215,36 +288,32 @@ namespace WindowsFormsApp1
             BeginInvoke(new Action(() => 图像显示控件[cameraIndex].SetImage(bitmap)));
         }
 
-        private void 更新计数与状态界面(int cameraIndex, bool isOk)
+        private void 更新计数与状态界面(int cameraIndex, ModuleInspectionDecision decision)
         {
             if (IsDisposed || !IsHandleCreated) return;
             BeginInvoke(new Action(() =>
             {
+                string decisionText = decision == ModuleInspectionDecision.Ok
+                    ? "OK"
+                    : decision == ModuleInspectionDecision.Ng ? "NG" : "待复检";
+                Color decisionColor = decision == ModuleInspectionDecision.Ok
+                    ? Color.LimeGreen
+                    : decision == ModuleInspectionDecision.Ng ? Color.Red : Color.DarkOrange;
                 switch (cameraIndex)
                 {
                     case 0:
-                        textBox5.Text = Properties.Settings.Default.相机1总数 = 拍照总数[0].ToString();
-                        textBox4.Text = Properties.Settings.Default.相机1OK数 = OK[0].ToString();
-                        textBox6.Text = Properties.Settings.Default.相机1NG数 = NG[0].ToString();
-                        label1.Text = isOk ? "OK" : "NG";
+                        textBox5.Text = 拍照总数[0].ToString();
+                        textBox4.Text = OK[0].ToString();
+                        textBox6.Text = NG[0].ToString();
+                        label1.Text = decisionText;
+                        label1.BackColor = decisionColor;
                         break;
                     case 1:
-                        textBox2.Text = Properties.Settings.Default.相机2总数 = 拍照总数[1].ToString();
-                        textBox3.Text = Properties.Settings.Default.相机2OK数 = OK[1].ToString();
-                        textBox1.Text = Properties.Settings.Default.相机2NG数 = NG[1].ToString();
-                        label2.Text = isOk ? "OK" : "NG";
-                        break;
-                    case 2:
-                        textBox9.Text = Properties.Settings.Default.相机3总数 = 拍照总数[2].ToString();
-                        textBox8.Text = Properties.Settings.Default.相机3OK数 = OK[2].ToString();
-                        textBox7.Text = Properties.Settings.Default.相机3NG数 = NG[2].ToString();
-                        label3.Text = isOk ? "OK" : "NG";
-                        break;
-                    case 3:
-                        textBox12.Text = Properties.Settings.Default.相机4总数 = 拍照总数[3].ToString();
-                        textBox11.Text = Properties.Settings.Default.相机4OK数 = OK[3].ToString();
-                        textBox10.Text = Properties.Settings.Default.相机4NG数 = NG[3].ToString();
-                        label4.Text = isOk ? "OK" : "NG";
+                        textBox2.Text = 拍照总数[1].ToString();
+                        textBox3.Text = OK[1].ToString();
+                        textBox1.Text = NG[1].ToString();
+                        label2.Text = decisionText;
+                        label2.BackColor = decisionColor;
                         break;
                 }
             }));
@@ -258,38 +327,26 @@ namespace WindowsFormsApp1
                 if (string.IsNullOrWhiteSpace(rootPath)) return;
                 string directory = Path.Combine(rootPath, DateTime.Now.ToString("yyyyMMdd"));
                 string file = Path.Combine(directory,
-                    $"相机{cameraIndex + 1}_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png");
+                    $"{获取相机名称(cameraIndex)}_{DateTime.Now:yyyyMMdd_HHmmss_fff}.png");
                 OpenCvImageHelper.SaveImage(image, file);
             }
             catch (Exception ex)
             {
-                LogAdded?.Invoke(0, $"相机{cameraIndex + 1}图片保存失败：{ex.Message}");
+                LogAdded?.Invoke(0, $"{获取相机名称(cameraIndex)}图片保存失败：{ex.Message}");
             }
         }
 
         private static string 获取保存根目录(int cameraIndex, int type)
         {
-            switch (cameraIndex)
-            {
-                case 0: return type == 0 ? Properties.Settings.Default.相机1图片保存路径 :
-                    type == 1 ? Properties.Settings.Default.相机1OK图保存路径 : Properties.Settings.Default.相机1NG图保存路径;
-                case 1: return type == 0 ? Properties.Settings.Default.相机2图片保存路径 :
-                    type == 1 ? Properties.Settings.Default.相机2OK图保存路径 : Properties.Settings.Default.相机2NG图保存路径;
-                case 2: return type == 0 ? Properties.Settings.Default.相机3图片保存路径 :
-                    type == 1 ? Properties.Settings.Default.相机3OK图保存路径 : Properties.Settings.Default.相机3NG图保存路径;
-                case 3: return type == 0 ? Properties.Settings.Default.相机4图片保存路径 :
-                    type == 1 ? Properties.Settings.Default.相机4OK图保存路径 : Properties.Settings.Default.相机4NG图保存路径;
-                default: return null;
-            }
+            ApplicationParameters parameters = VisionParameterStore.ApplicationParameters;
+            CameraRoleParameters camera = cameraIndex == 0
+                ? parameters.DetectionCamera
+                : parameters.ClassificationCamera;
+            return type == 0 ? camera.RawImagePath : type == 1 ? camera.OkImagePath : camera.NgImagePath;
         }
 
         private void button1_Click_1(object sender, EventArgs e)
         {
-            if (检测器 == null)
-            {
-                LogAdded?.Invoke(0, "DEIM模型未加载，不能开始检测。");
-                return;
-            }
             if (相机列表.Count == 0)
             {
                 LogAdded?.Invoke(0, "没有已连接的相机。");
@@ -303,41 +360,36 @@ namespace WindowsFormsApp1
             LogAdded?.Invoke(1, 检测中 ? "已开启自动检测，等待触发。" : "已停止自动检测。");
         }
 
-        public void 调整控件布局(int cameraCount)
+        public void 调整控件布局()
         {
-            cameraCount = Math.Max(1, Math.Min(最大相机数量, cameraCount));
-            tableLayoutPanel1.Controls.Clear();
+            const int cameraCount = 最大相机数量;
             foreach (halcon view in 图像显示控件) view.Visible = false;
 
-            if (cameraCount == 1)
-            {
-                tableLayoutPanel1.Controls.Add(halcon1, 0, 0);
-                tableLayoutPanel1.SetColumnSpan(halcon1, 2);
-                tableLayoutPanel1.SetRowSpan(halcon1, 2);
-            }
-            else if (cameraCount == 2)
-            {
-                tableLayoutPanel1.Controls.Add(halcon1, 0, 0);
-                tableLayoutPanel1.Controls.Add(halcon2, 1, 0);
-                tableLayoutPanel1.SetRowSpan(halcon1, 2);
-                tableLayoutPanel1.SetRowSpan(halcon2, 2);
-            }
-            else
-            {
-                for (int i = 0; i < cameraCount; i++)
-                    tableLayoutPanel1.Controls.Add(图像显示控件[i], i % 2, i / 2);
-            }
+            EnsureImageViewParent(halcon1, splitContainerImages.Panel1);
+            EnsureImageViewParent(halcon2, splitContainerImages.Panel2);
+            splitContainerImages.Panel2Collapsed = cameraCount < 2;
 
-            for (int i = 0; i < cameraCount; i++) 图像显示控件[i].Visible = true;
+            for (int i = 0; i < cameraCount; i++)
+                图像显示控件[i].Visible = true;
+
             Control[][] counterControls =
             {
-                new Control[] { textBox5, textBox4, textBox6, textBox13 },
-                new Control[] { textBox2, textBox3, textBox1, textBox14 },
-                new Control[] { textBox9, textBox8, textBox7, textBox15 },
-                new Control[] { textBox12, textBox11, textBox10, textBox16 }
+                new Control[] { textBox5, textBox4, textBox6 },
+                new Control[] { textBox2, textBox3, textBox1 }
             };
             for (int i = 0; i < counterControls.Length; i++)
             foreach (Control control in counterControls[i]) control.Visible = i < cameraCount;
+        }
+
+        private static void EnsureImageViewParent(halcon view, SplitterPanel panel)
+        {
+            if (view.Parent != panel)
+            {
+                view.Parent?.Controls.Remove(view);
+                panel.Controls.Add(view);
+            }
+
+            view.Dock = DockStyle.Fill;
         }
 
         private void 释放已连接相机()
@@ -356,9 +408,34 @@ namespace WindowsFormsApp1
             检测中 = false;
             状态.自动状态 = false;
             释放已连接相机();
-            检测器?.Dispose();
-            检测器 = null;
             Properties.Settings.Default.Save();
+        }
+
+        private static string 获取相机名称(int cameraIndex)
+        {
+            return cameraIndex == 0 ? "检测相机" : "分类相机";
+        }
+
+        private static string 获取判定名称(ModuleInspectionDecision decision)
+        {
+            return decision == ModuleInspectionDecision.Ok ? "OK" :
+                decision == ModuleInspectionDecision.Ng ? "NG" : "待复检";
+        }
+
+        private sealed class ModuleInspectionResultScope : IDisposable
+        {
+            public ModuleInspectionResultScope(ModuleInspectionResult result)
+            {
+                Result = result;
+            }
+
+            public ModuleInspectionResult Result { get; }
+
+            public void Dispose()
+            {
+                Result?.AnnotatedImage?.Dispose();
+                Result?.ErrorImage?.Dispose();
+            }
         }
     }
 }

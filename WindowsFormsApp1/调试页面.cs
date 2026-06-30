@@ -14,10 +14,14 @@ namespace WindowsFormsApp1
         private string 当前图片文件夹;
         private string[] 文件夹图片列表 = new string[0];
         private int 当前图片索引 = -1;
+        private bool 自动检测中;
 
         public 调试页面()
         {
             InitializeComponent();
+            if (System.ComponentModel.LicenseManager.UsageMode ==
+                System.ComponentModel.LicenseUsageMode.Designtime)
+                return;
             if (comboBox1.Items.Count > 0 && comboBox1.SelectedIndex < 0)
                 comboBox1.SelectedIndex = 0;
         }
@@ -43,18 +47,74 @@ namespace WindowsFormsApp1
             if (文件夹图片列表.Length == 0)
             {
                 nextImageButton.Enabled = false;
-                SetResultLabel(false, "NA");
+                SetResultLabel(ModuleInspectionDecision.Review, "NA");
                 LogAdded?.Invoke(0, "所选文件夹内没有支持的图片。");
                 return;
             }
 
-            nextImageButton.Enabled = true;
-            DetectNextImage();
+            if (autoDetectCheckBox.Checked)
+            {
+                nextImageButton.Enabled = false;
+                DetectAllImages();
+            }
+            else
+            {
+                nextImageButton.Enabled = true;
+                DetectNextImage();
+            }
         }
 
         private void nextImageButton_Click(object sender, EventArgs e)
         {
+            if (autoDetectCheckBox.Checked)
+                return;
+
             DetectNextImage();
+        }
+
+        private void autoDetectCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            nextImageButton.Enabled = !autoDetectCheckBox.Checked &&
+                文件夹图片列表 != null &&
+                文件夹图片列表.Length > 0 &&
+                当前图片索引 < 文件夹图片列表.Length - 1;
+
+            if (autoDetectCheckBox.Checked &&
+                文件夹图片列表 != null &&
+                文件夹图片列表.Length > 0 &&
+                !自动检测中)
+            {
+                当前图片索引 = -1;
+                DetectAllImages();
+            }
+        }
+
+        private void DetectAllImages()
+        {
+            if (文件夹图片列表 == null || 文件夹图片列表.Length == 0)
+            {
+                LogAdded?.Invoke(0, "请先点击图片检测并选择图片文件夹。");
+                return;
+            }
+
+            自动检测中 = true;
+            nextImageButton.Enabled = false;
+            try
+            {
+                while (autoDetectCheckBox.Checked && 当前图片索引 < 文件夹图片列表.Length - 1)
+                {
+                    DetectNextImage();
+                    Application.DoEvents();
+                }
+            }
+            finally
+            {
+                自动检测中 = false;
+                nextImageButton.Enabled = !autoDetectCheckBox.Checked &&
+                    文件夹图片列表 != null &&
+                    文件夹图片列表.Length > 0 &&
+                    当前图片索引 < 文件夹图片列表.Length - 1;
+            }
         }
 
         private void DetectNextImage()
@@ -75,33 +135,73 @@ namespace WindowsFormsApp1
             }
 
             当前图片路径 = 文件夹图片列表[当前图片索引];
+            InspectCurrentImage(null, copyToResultFolder: true, writeLog: true);
+        }
+
+        public bool 预览当前图片(InspectionParameters previewParameters)
+        {
+            return InspectCurrentImage(previewParameters, copyToResultFolder: false, writeLog: false);
+        }
+
+        private bool InspectCurrentImage(
+            InspectionParameters previewParameters,
+            bool copyToResultFolder,
+            bool writeLog)
+        {
+            if (string.IsNullOrWhiteSpace(当前图片路径) || !File.Exists(当前图片路径))
+                return false;
+
+            bool previewMode = previewParameters != null;
             try
             {
                 using (Mat image = OpenCvImageHelper.LoadImage(当前图片路径))
                 {
-                    ModuleInspectionResult result = ModuleInspector.Inspect(image);
+                    ModuleInspectionResult result = previewParameters == null
+                        ? ModuleInspector.Inspect(image)
+                        : ModuleInspector.Inspect(
+                            image,
+                            VisionParameterStore.CurrentMaterialProfile.Regions,
+                            previewParameters);
                     using (result.AnnotatedImage)
                     using (result.ErrorImage)
-                        StoreInspectionImages(result);
+                    {
+                        Mat display = result.Decision == ModuleInspectionDecision.Ok
+                            ? result.AnnotatedImage
+                            : result.ErrorImage;
+                        halcon1.SetImage(display);
 
-                    string resultName = result.IsOk ? "OK" : "NG";
-                    SetResultLabel(result.IsOk, resultName);
-                    CopyImageToResultFolder(当前图片路径, resultName);
-                    LogAdded?.Invoke(result.IsOk ? 1 : 0,
-                        $"{Path.GetFileName(当前图片路径)} 检测完成：{resultName}，{result.ReasonText}");
+                        string resultName = GetDecisionName(result.Decision);
+                        SetResultLabel(result.Decision, resultName);
+                        previewModeLabel.Visible = previewMode;
+                        if (copyToResultFolder)
+                            CopyImageToResultFolder(当前图片路径, resultName);
+                        if (writeLog)
+                        {
+                            int logType = result.Decision == ModuleInspectionDecision.Ok ? 1 : 0;
+                            LogAdded?.Invoke(logType,
+                                $"{Path.GetFileName(当前图片路径)} 检测完成：{resultName}，{result.ReasonText}");
+                        }
+                    }
                 }
+                return true;
             }
             catch (Exception ex)
             {
-                SetResultLabel(false, "NG");
-                LogAdded?.Invoke(0, "图片检测失败：" + ex.Message);
+                SetResultLabel(ModuleInspectionDecision.Ng, "NG");
+                if (writeLog)
+                    LogAdded?.Invoke(0, "图片检测失败：" + ex.Message);
+                return false;
             }
         }
 
-        private void SetResultLabel(bool isOk, string text)
+        private void SetResultLabel(ModuleInspectionDecision decision, string text)
         {
             label1.Text = text;
-            label1.BackColor = isOk ? Color.LimeGreen : Color.Red;
+            label1.BackColor = decision == ModuleInspectionDecision.Ok
+                ? Color.LimeGreen
+                : decision == ModuleInspectionDecision.Ng
+                    ? Color.Red
+                    : Color.DarkOrange;
             label1.ForeColor = Color.White;
         }
 
@@ -144,71 +244,21 @@ namespace WindowsFormsApp1
 
         private void button3_Click(object sender, EventArgs e)
         {
-            int index = comboBox1.SelectedIndex;
-            if (index < 0) index = 0;
-            string count = numericUpDown1.Value.ToString();
-            string contrast = numericUpDown2.Value.ToString();
-            string threshold = numericUpDown3.Value.ToString();
-
-            switch (index)
-            {
-                case 0:
-                    数据变量.相机1模板数量 = count;
-                    数据变量.相机1对比度 = contrast;
-                    数据变量.相机1匹配度 = threshold;
-                    break;
-                case 1:
-                    数据变量.相机2模板数量 = count;
-                    数据变量.相机2对比度 = contrast;
-                    数据变量.相机2匹配度 = threshold;
-                    break;
-                case 2:
-                    数据变量.相机3模板数量 = count;
-                    数据变量.相机3对比度 = contrast;
-                    数据变量.相机3匹配度 = threshold;
-                    break;
-                case 3:
-                    数据变量.相机4模板数量 = count;
-                    数据变量.相机4对比度 = contrast;
-                    数据变量.相机4匹配度 = threshold;
-                    break;
-            }
-            LogAdded?.Invoke(1, $"相机{index + 1}调试参数已更新。");
+            if (!InspectCurrentImage(null, copyToResultFolder: false, writeLog: true))
+                LogAdded?.Invoke(0, "请先通过“图片检测”加载一张图片。");
         }
 
         private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
         {
-            int index = comboBox1.SelectedIndex;
-            string count = "0", contrast = "0", threshold = "0";
-            switch (index)
-            {
-                case 0: count = 数据变量.相机1模板数量; contrast = 数据变量.相机1对比度; threshold = 数据变量.相机1匹配度; break;
-                case 1: count = 数据变量.相机2模板数量; contrast = 数据变量.相机2对比度; threshold = 数据变量.相机2匹配度; break;
-                case 2: count = 数据变量.相机3模板数量; contrast = 数据变量.相机3对比度; threshold = 数据变量.相机3匹配度; break;
-                case 3: count = 数据变量.相机4模板数量; contrast = 数据变量.相机4对比度; threshold = 数据变量.相机4匹配度; break;
-            }
-            decimal value;
-            if (decimal.TryParse(count, out value)) numericUpDown1.Value = Clamp(value, numericUpDown1.Minimum, numericUpDown1.Maximum);
-            if (decimal.TryParse(contrast, out value)) numericUpDown2.Value = Clamp(value, numericUpDown2.Minimum, numericUpDown2.Maximum);
-            if (decimal.TryParse(threshold, out value)) numericUpDown3.Value = Clamp(value, numericUpDown3.Minimum, numericUpDown3.Maximum);
-        }
-
-        public void 相机数量设定(int num)
-        {
-            num = Math.Max(1, Math.Min(2, num));
-            comboBox1.Items.Clear();
-            for (int i = 1; i <= num; i++)
-                comboBox1.Items.Add(i == 1 ? "检测相机" : "分类相机");
-            if (comboBox1.Items.Count > 0) comboBox1.SelectedIndex = 0;
         }
 
         private void halcon1_Load(object sender, EventArgs e) { }
         private void button4_Click(object sender, EventArgs e) { halcon1.ClearDisplay(); }
-        private void checkBox1_CheckedChanged(object sender, EventArgs e) { }
-
-        private static decimal Clamp(decimal value, decimal minimum, decimal maximum)
+        private static string GetDecisionName(ModuleInspectionDecision decision)
         {
-            return Math.Min(maximum, Math.Max(minimum, value));
+            return decision == ModuleInspectionDecision.Ok ? "OK" :
+                decision == ModuleInspectionDecision.Ng ? "NG" : "待复检";
         }
+
     }
 }

@@ -8,7 +8,6 @@ namespace WindowsFormsApp1
     {
         public static void ConfigureMainWindow(Form form, SplitContainer mainContainer)
         {
-            EnsureTwoCameraSetting();
             form.StartPosition = FormStartPosition.CenterScreen;
             form.MinimumSize = new Size(900, 560);
             form.WindowState = FormWindowState.Maximized;
@@ -24,17 +23,6 @@ namespace WindowsFormsApp1
             form.Resize += resize;
             form.Shown += resize;
             resize(form, EventArgs.Empty);
-        }
-
-        private static void EnsureTwoCameraSetting()
-        {
-            const string cameraCountSettingName = "\u76f8\u673a\u6570\u91cf\u8bbe\u7f6e";
-            string value = Convert.ToString(Properties.Settings.Default[cameraCountSettingName]);
-            if (int.TryParse(value, out int count) && count >= 1 && count <= 2)
-                return;
-
-            Properties.Settings.Default[cameraCountSettingName] = "2";
-            Properties.Settings.Default.Save();
         }
 
         private static void SetRightPanelWidth(SplitContainer split, int rightWidth)

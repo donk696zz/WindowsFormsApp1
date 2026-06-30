@@ -1,875 +1,522 @@
-using HslCommunication.Profinet.Panasonic.Helper;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Controls;
 using System.Windows.Forms;
-using static System.Net.WebRequestMethods;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace WindowsFormsApp1
 {
     public partial class 参数界面 : Form
     {
-
         public event Action<int, string> LogAdded;
-       裁图类 裁图类=new 裁图类();
+        public event Func<InspectionParameters, bool> PreviewRequested;
+
+        private ApplicationParameters parameters;
+        private readonly List<Action> bindActions = new List<Action>();
+        private bool loading;
+        private Timer previewTimer;
+
+        private TextBox detectionRawPath;
+        private TextBox detectionOkPath;
+        private TextBox detectionNgPath;
+        private TextBox classificationRawPath;
+        private TextBox classificationOkPath;
+        private TextBox classificationNgPath;
+        private NumericUpDown detectionExposure;
+        private NumericUpDown detectionGain;
+        private NumericUpDown classificationExposure;
+        private NumericUpDown classificationGain;
+        private NumericUpDown permissionTimeout;
+        private NumericUpDown retentionDays;
 
         public 参数界面()
         {
             InitializeComponent();
-            第一次数据加载();
-            保存按钮与路径控制();
+            if (System.ComponentModel.LicenseManager.UsageMode ==
+                System.ComponentModel.LicenseUsageMode.Designtime)
+            {
+                parameters = new ApplicationParameters();
+                return;
+            }
+            previewTimer = new Timer { Interval = 250 };
+            previewTimer.Tick += previewTimer_Tick;
+            parameters = VisionParameterStore.ApplicationParameters.Clone();
+            BuildDecisionPage();
+            BuildAdvancedPage();
+            BuildCameraStoragePage();
+            BuildSystemPage();
         }
+
+        private void 参数界面_Load(object sender, EventArgs e)
+        {
+            第一次数据加载();
+        }
+
         public void 第一次数据加载()
         {
-            textBox1.Text = 数据变量.相机1原图保存路径;
-            textBox2.Text = 数据变量.相机1hdl文件路径;
-            textBox3.Text = 数据变量.相机1hdict文件路径;
-            textBox15.Text = 数据变量.相机1OK图保存路径;
-            textBox16.Text = 数据变量.相机1NG图保存路径;
-
-            textBox6.Text = 数据变量.相机2原图保存路径;
-            textBox5.Text = 数据变量.相机2hdict文件路径;
-            textBox17.Text = 数据变量.相机3OK图保存路径;
-            textBox18.Text =数据变量.相机3NG图保存路径;
-
-            textBox11.Text = 数据变量.相机3原图保存路径;
-            textBox10.Text = 数据变量.相机3hdl文件路径;
-            textBox9.Text = 数据变量.相机3hdict文件路径;
-            textBox20.Text = 数据变量.相机3OK图保存路径;
-            textBox19.Text = 数据变量.相机3NG图保存路径;
-
-
-            textBox14.Text = 数据变量.相机4原图保存路径;
-            textBox13.Text = 数据变量.相机4hdl文件路径;
-            textBox12.Text = 数据变量.相机4hdict文件路径;
-            textBox22.Text =数据变量.相机4OK图保存路径;
-            textBox21.Text = 数据变量.相机4NG图保存路径;
-
-            textBox7.Text = 数据变量.权限时间;
-            comboBox1.Text = ClampCameraCountText(数据变量.相机数量设置);
-            textBox8.Text =数据变量.图片删除日期;
-            comboBox2.Items.Clear();
-            comboBox2.Items.AddRange(相机变量.料号集合.ToArray());
-            comboBox2.Text =数据变量.料号名称;
+            parameters = VisionParameterStore.ApplicationParameters.Clone();
+            刷新当前料号显示();
+            BindAll();
         }
 
-        private static string ClampCameraCountText(string value)
+        public void 刷新当前料号显示()
         {
-            if (!int.TryParse(value, out int count))
-                return "2";
-
-            return Math.Max(1, Math.Min(2, count)).ToString();
+            currentMaterialLabel.Text = "当前料号：" +
+                (string.IsNullOrWhiteSpace(数据变量.料号名称) ? "未选择" : 数据变量.料号名称);
         }
 
-        private void button1_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机1图片保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机1原图保存路径 = Properties.Settings.Default.相机1图片保存路径;
-                textBox1.Text = 数据变量.相机1原图保存路径;
-            }
-
-
-        }
-
-        private void button2_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "ONNX模型 (*.onnx)|*.onnx";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机1hdl文件路径 = folderBrowserDialog.FileName;
-                    验证Onnx模型(Properties.Settings.Default.相机1hdl文件路径);
-                    Properties.Settings.Default.Save();
-                    数据变量.相机1hdl文件路径 = Properties.Settings.Default.相机1hdl文件路径;
-                    textBox2.Text = 数据变量.相机1hdl文件路径;
-                   
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机1路径错误!"+ex);
-                }
-            }
-        }
-
-        private void button3_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "类别名称文件 (*.txt)|*.txt";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机1hdict文件路径 = folderBrowserDialog.FileName;
-                    Properties.Settings.Default.Save();
-                    数据变量.相机1hdict文件路径 = Properties.Settings.Default.相机1hdict文件路径;
-                    textBox3.Text = 数据变量.相机1hdict文件路径;
-                    
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机1路径错误!" + ex);
-                }
-            }
-        }
-
-        private void button6_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机2图片保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机2原图保存路径 = Properties.Settings.Default.相机2图片保存路径;
-                textBox6.Text = 数据变量.相机2原图保存路径;
-            }
-
-        }
-
-        private void button5_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "ONNX模型 (*.onnx)|*.onnx";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机2hdl文件路径 = folderBrowserDialog.FileName;
-                    验证Onnx模型(Properties.Settings.Default.相机2hdl文件路径);
-                    Properties.Settings.Default.Save();
-                    数据变量.相机2hdl文件路径 = Properties.Settings.Default.相机2hdl文件路径;
-                    textBox5.Text = 数据变量.相机2hdl文件路径;
-                    
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机2路径错误!" + ex);
-                }
-            }
-        }
-
-        private void button4_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "类别名称文件 (*.txt)|*.txt";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机2hdict文件路径 = folderBrowserDialog.FileName;
-                    Properties.Settings.Default.Save();
-                    数据变量.相机2hdict文件路径 = Properties.Settings.Default.相机2hdict文件路径;
-                    textBox4.Text = 数据变量.相机2hdict文件路径;
-                    
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机2路径错误!" + ex);
-                }
-            }
-
-        }
-
-        private void button11_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机3图片保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机3原图保存路径 = Properties.Settings.Default.相机3图片保存路径;
-                textBox11.Text = 数据变量.相机3原图保存路径;
-            }
-
-        }
-
-        private void button10_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "ONNX模型 (*.onnx)|*.onnx";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机3hdl文件路径 = folderBrowserDialog.FileName;
-                    验证Onnx模型(Properties.Settings.Default.相机3hdl文件路径);
-                    Properties.Settings.Default.Save();
-                    数据变量.相机3hdl文件路径 = Properties.Settings.Default.相机3hdl文件路径;
-                    textBox10.Text = 数据变量.相机3hdl文件路径;
-                   
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机3路径错误!" + ex);
-                }
-            }
-        }
-
-        private void button9_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "类别名称文件 (*.txt)|*.txt";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机3hdict文件路径 = folderBrowserDialog.FileName;
-                    Properties.Settings.Default.Save();
-                    数据变量.相机3hdict文件路径 = Properties.Settings.Default.相机3hdict文件路径;
-                    textBox9.Text = 数据变量.相机3hdict文件路径;
-                    
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机3路径错误!" + ex);
-                }
-            }
-        }
-
-        private void button14_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机4图片保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机4原图保存路径 = Properties.Settings.Default.相机4图片保存路径;
-                textBox14.Text = 数据变量.相机4原图保存路径;
-
-            }
-        }
-
-        private void button13_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "ONNX模型 (*.onnx)|*.onnx";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机4hdl文件路径 = folderBrowserDialog.FileName;
-                    验证Onnx模型(Properties.Settings.Default.相机4hdl文件路径);
-                    Properties.Settings.Default.Save();
-                    数据变量.相机4hdl文件路径 = Properties.Settings.Default.相机4hdl文件路径;
-                    textBox13.Text = 数据变量.相机4hdl文件路径;
-                    
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机4路径错误!" + ex);
-                }
-            }
-        }
-
-        private void button12_Click(object sender, EventArgs e)
-        {
-            OpenFileDialog folderBrowserDialog = new OpenFileDialog();
-            folderBrowserDialog.Title = "选择文件提取路径";
-            folderBrowserDialog.Filter = "类别名称文件 (*.txt)|*.txt";
-            folderBrowserDialog.InitialDirectory = "";//文件选择打开的初始位置
-            folderBrowserDialog.Multiselect = false;
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                try
-                {
-                    Properties.Settings.Default.相机4hdict文件路径 = folderBrowserDialog.FileName;
-                    Properties.Settings.Default.Save();
-                    数据变量.相机4hdict文件路径 = Properties.Settings.Default.相机4hdict文件路径;
-                    textBox12.Text = 数据变量.相机4hdict文件路径;
-                    
-
-                }
-                catch (Exception ex)
-                {
-                    LogAdded?.Invoke(0, "相机4路径错误!" + ex);
-                }
-            }
-            
-            
-        }
-
-        private void button7_Click(object sender, EventArgs e)
-        {
-            if (comboBox1.SelectedIndex != -1&& comboBox2.SelectedIndex != -1)
-            {
-                
-                int 数量 = int.Parse(comboBox1.Text);
-                数据变量.权限时间 = textBox7.Text;
-                Properties.Settings.Default.权限时间设置 = textBox7.Text;
-                数据变量.相机数量设置 = comboBox1.Text;
-                Properties.Settings.Default.相机数量设置 = comboBox1.Text;
-                数据变量.图片删除日期 = textBox8.Text;
-                Properties.Settings.Default.图片删除时间 = textBox7.Text;
-                数据变量.料号名称 = comboBox2.Text;
-                Properties.Settings.Default.当前料号= comboBox2.Text;
-                Properties.Settings.Default.Save();
-                数据保存();
-             
-                底层页面.xiangjishezhijiemian.相机数量设定(数量);
-                底层页面.tiaoshijiemian.相机数量设定(数量);
-                底层页面.peifangjiemian.相机数量设定(数量);
-                底层页面.zidongjiemian.调整控件布局(数量);
-
-
-                底层页面.liaohaotianjia.保存数据();
-                保存按钮与路径控制();
-
-                LogAdded?.Invoke(1, "数据保存成功!");
-            }
-            else
-            {
-                LogAdded?.Invoke(0, "请选择相机数量和料号选择!");
-            }
-           
-        }
-        public void 数据保存()
-        {
-            数据变量.相机1原图保存路径=textBox1.Text;
-            数据变量.相机1hdl文件路径= textBox2.Text;
-            数据变量.相机1hdict文件路径 = textBox3.Text;
-            数据变量.相机1OK图保存路径 = textBox15.Text;
-            数据变量.相机1NG图保存路径 = textBox16.Text;
-
-            数据变量.相机2原图保存路径 = textBox6.Text;
-            数据变量.相机2hdict文件路径 = textBox5.Text;
-            数据变量.相机3OK图保存路径 = textBox17.Text;
-            数据变量.相机3NG图保存路径 = textBox18.Text;
-
-            数据变量.相机3原图保存路径 = textBox11.Text;
-            数据变量.相机3hdl文件路径 = textBox10.Text;
-            数据变量.相机3hdict文件路径 = textBox9.Text;
-            数据变量.相机3OK图保存路径 = textBox20.Text;
-            数据变量.相机3NG图保存路径 = textBox19.Text;
-
-
-            数据变量.相机4原图保存路径 = textBox14.Text;
-            数据变量.相机4hdl文件路径 = textBox13.Text;
-            数据变量.相机4hdict文件路径 = textBox12.Text;
-            数据变量.相机4OK图保存路径 = textBox22.Text;
-            数据变量.相机4NG图保存路径 = textBox21.Text;
-
-        }
-
-        private void button15_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机1OK图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机1原图保存路径 = Properties.Settings.Default.相机1OK图保存路径;
-                textBox15.Text = 数据变量.相机1原图保存路径;
-            }
-        }
-
-        private void button16_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机1NG图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机1NG图保存路径 = Properties.Settings.Default.相机1NG图保存路径;
-                textBox16.Text = 数据变量.相机1NG图保存路径;
-            }
-        }
-
-        private void button17_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机2OK图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机2OK图保存路径 = Properties.Settings.Default.相机2OK图保存路径;
-                textBox17.Text = 数据变量.相机2OK图保存路径;
-            }
-        }
-
-        private void button18_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机2NG图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机2NG图保存路径 = Properties.Settings.Default.相机2NG图保存路径;
-                textBox18.Text = 数据变量.相机2NG图保存路径;
-            }
-        }
-
-        private void button20_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机3OK图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机3OK图保存路径 = Properties.Settings.Default.相机3OK图保存路径;
-                textBox20.Text = 数据变量.相机3OK图保存路径;
-            }
-        }
-
-        private void button19_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机3NG图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机3NG图保存路径 = Properties.Settings.Default.相机3NG图保存路径;
-                textBox19.Text = 数据变量.相机3NG图保存路径;
-            }
-        }
-
-        private void button22_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机4OK图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机4OK图保存路径 = Properties.Settings.Default.相机4OK图保存路径;
-                textBox22.Text = 数据变量.相机4OK图保存路径;
-            }
-        }
-
-        private void button21_Click(object sender, EventArgs e)
-        {
-            FolderBrowserDialog folderBrowserDialog = new FolderBrowserDialog();
-            folderBrowserDialog.Description = "选择文件提取路径";
-            folderBrowserDialog.RootFolder = Environment.SpecialFolder.Desktop;//文件选择打开的初始位置
-            if (folderBrowserDialog.ShowDialog() == DialogResult.OK)
-            {
-                Properties.Settings.Default.相机4NG图保存路径 = folderBrowserDialog.SelectedPath;
-                Properties.Settings.Default.Save();
-                数据变量.相机4NG图保存路径 = Properties.Settings.Default.相机4NG图保存路径;
-                textBox21.Text = 数据变量.相机4NG图保存路径;
-            }
-        }
-        public void 清理图片()
+        private void saveButton_Click(object sender, EventArgs e)
         {
             try
             {
-                // 读取配置里所有根路径
-                List<string> rootPaths = new List<string>
-             {
-            //相机1
-            Properties.Settings.Default.相机1图片保存路径,
-            Properties.Settings.Default.相机1OK图保存路径,
-            Properties.Settings.Default.相机1NG图保存路径,
-            //相机2
-            Properties.Settings.Default.相机2图片保存路径,
-            Properties.Settings.Default.相机2OK图保存路径,
-            Properties.Settings.Default.相机2NG图保存路径,
-            //相机3
-            Properties.Settings.Default.相机3图片保存路径,
-            Properties.Settings.Default.相机3OK图保存路径,
-            Properties.Settings.Default.相机3NG图保存路径,
-            //相机4
-            Properties.Settings.Default.相机4图片保存路径,
-            Properties.Settings.Default.相机4OK图保存路径,
-            Properties.Settings.Default.相机4NG图保存路径
-             };
+                parameters.Inspection.Validate();
+                parameters.DetectionCamera.RawImagePath = detectionRawPath.Text.Trim();
+                parameters.DetectionCamera.OkImagePath = detectionOkPath.Text.Trim();
+                parameters.DetectionCamera.NgImagePath = detectionNgPath.Text.Trim();
+                parameters.ClassificationCamera.RawImagePath = classificationRawPath.Text.Trim();
+                parameters.ClassificationCamera.OkImagePath = classificationOkPath.Text.Trim();
+                parameters.ClassificationCamera.NgImagePath = classificationNgPath.Text.Trim();
+                parameters.DetectionCamera.Exposure = (double)detectionExposure.Value;
+                parameters.DetectionCamera.Gain = (double)detectionGain.Value;
+                parameters.ClassificationCamera.Exposure = (double)classificationExposure.Value;
+                parameters.ClassificationCamera.Gain = (double)classificationGain.Value;
+                parameters.PermissionTimeoutMinutes = Decimal.ToInt32(permissionTimeout.Value);
+                parameters.ImageRetentionDays = Decimal.ToInt32(retentionDays.Value);
 
-                // 7天前日期
-                DateTime delLimitDate = DateTime.Now.AddDays(-7);
-
-                foreach (string root in rootPaths)
-                {
-                    if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-                        continue;
-
-                    // 获取根目录下所有子文件夹
-                    string[] dirs = Directory.GetDirectories(root);
-                    foreach (string dir in dirs)
-                    {
-                        try
-                        {
-                            // 取文件夹名称 如 20260508
-                            string dirName = Path.GetFileName(dir.TrimEnd('\\'));
-                            // 尝试转成日期
-                            if (DateTime.TryParseExact(dirName, "yyyyMMdd",
-                                System.Globalization.CultureInfo.InvariantCulture,
-                                System.Globalization.DateTimeStyles.None,
-                                out DateTime folderDate))
-                            {
-                                // 早于7天前 → 删除整个文件夹
-                                if (folderDate < delLimitDate)
-                                {
-                                    Directory.Delete(dir, true); // true=递归删除里面所有文件
-                                }
-                            }
-                        }
-                        catch
-                        {
-                            // 单个文件夹删除失败不影响其他
-                        }
-                    }
-                }
-
-                LogAdded?.Invoke(1, "已自动清理7天前过期图片文件夹");
+                VisionParameterStore.SaveApplicationParameters(parameters);
+                数据变量.从参数模型同步();
+                ApplyCameraParameters();
+                statusLabel.Text = "参数已保存并应用。";
+                LogAdded?.Invoke(1, statusLabel.Text);
+                PreviewRequested?.Invoke(null);
             }
-            catch
+            catch (Exception ex)
             {
-
+                statusLabel.Text = "参数保存失败：" + ex.Message;
+                LogAdded?.Invoke(0, statusLabel.Text);
             }
         }
-        public void 保存按钮与路径控制()
+
+        private void resetButton_Click(object sender, EventArgs e)
         {
-            int 数量 = int.Parse(comboBox1.Text);
-            switch(数量)
+            if (MessageBox.Show("确定恢复全部检测参数默认值？", "恢复默认",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            parameters = new ApplicationParameters();
+            BindAll();
+            statusLabel.Text = "已载入默认值，点击“保存参数”后生效。";
+            SchedulePreview();
+        }
+
+        private void ApplyCameraParameters()
+        {
+            if (相机变量.CameraList.Count > 0)
+                相机变量.CameraList[0].实时设置曝光增益(
+                    parameters.DetectionCamera.Exposure, parameters.DetectionCamera.Gain);
+            if (相机变量.CameraList.Count > 1)
+                相机变量.CameraList[1].实时设置曝光增益(
+                    parameters.ClassificationCamera.Exposure, parameters.ClassificationCamera.Gain);
+        }
+
+        private void BuildDecisionPage()
+        {
+            GroupBox highBad = CreateGroup("数值越高越差", 630, 410);
+            FlowLayoutPanel flow = CreateVerticalFlow();
+            highBad.Controls.Add(flow);
+            AddRatioPair(flow, "中间串银", p => p.MiddleSilverReviewRatio, (p, v) => p.MiddleSilverReviewRatio = v,
+                p => p.MiddleSilverNgRatio, (p, v) => p.MiddleSilverNgRatio = v);
+            AddRatioPair(flow, "最大缺银块", p => p.MissingSilverReviewRatio, (p, v) => p.MissingSilverReviewRatio = v,
+                p => p.MissingSilverNgRatio, (p, v) => p.MissingSilverNgRatio = v);
+            AddRatioPair(flow, "银面内部暗缺陷", p => p.InnerDefectReviewRatio, (p, v) => p.InnerDefectReviewRatio = v,
+                p => p.InnerDefectNgRatio, (p, v) => p.InnerDefectNgRatio = v);
+            AddRatioPair(flow, "边缘缺银/崩边", p => p.EdgeMissingReviewRatio, (p, v) => p.EdgeMissingReviewRatio = v,
+                p => p.EdgeMissingNgRatio, (p, v) => p.EdgeMissingNgRatio = v);
+            AddRatioPair(flow, "线状暗沟", p => p.LineDefectReviewRatio, (p, v) => p.LineDefectReviewRatio = v,
+                p => p.LineDefectNgRatio, (p, v) => p.LineDefectNgRatio = v);
+            AddRatioPair(flow, "边缘溢银", p => p.EdgeSilverReviewRatio, (p, v) => p.EdgeSilverReviewRatio = v,
+                p => p.EdgeSilverNgRatio, (p, v) => p.EdgeSilverNgRatio = v);
+            decisionFlowPanel.Controls.Add(highBad);
+
+            GroupBox coverage = CreateGroup("银面覆盖率", 630, 300);
+            FlowLayoutPanel coverageFlow = CreateVerticalFlow();
+            coverage.Controls.Add(coverageFlow);
+            AddRatio(coverageFlow, "顶部低于此值为NG", p => p.SilverTopCoverageNgRatio, (p, v) => p.SilverTopCoverageNgRatio = v, 0, 100);
+            AddRatio(coverageFlow, "底部低于此值为NG", p => p.SilverBottomCoverageNgRatio, (p, v) => p.SilverBottomCoverageNgRatio = v, 0, 100);
+            AddRatio(coverageFlow, "达到此值为OK", p => p.SilverCoverageOkRatio, (p, v) => p.SilverCoverageOkRatio = v, 0, 100);
+            AddHelp(coverageFlow, "NG线与OK线之间判定为待复检；待复检不会自动放行为OK。");
+            decisionFlowPanel.Controls.Add(coverage);
+        }
+
+        private void BuildAdvancedPage()
+        {
+            GroupBox thresholds = CreateGroup("基础灰度与二值化", 630, 380);
+            FlowLayoutPanel flow = CreateVerticalFlow();
+            thresholds.Controls.Add(flow);
+            AddInteger(flow, "银面灰度阈值", p => p.SilverGrayThreshold, (p, v) => p.SilverGrayThreshold = v, 0, 255);
+            AddInteger(flow, "边缘溢银灰度阈值", p => p.EdgeSilverGrayThreshold, (p, v) => p.EdgeSilverGrayThreshold = v, 0, 255);
+            AddInteger(flow, "中间阈值偏移", p => p.MiddleSilverThresholdOffset, (p, v) => p.MiddleSilverThresholdOffset = v, 0, 255);
+            AddInteger(flow, "中间阈值下限", p => p.MiddleSilverThresholdMinimum, (p, v) => p.MiddleSilverThresholdMinimum = v, 0, 255);
+            AddInteger(flow, "中间阈值上限", p => p.MiddleSilverThresholdMaximum, (p, v) => p.MiddleSilverThresholdMaximum = v, 0, 255);
+            AddInteger(flow, "缺银暗像素阈值", p => p.MissingDarkThreshold, (p, v) => p.MissingDarkThreshold = v, 0, 255);
+            AddInteger(flow, "缺银边界忽略像素", p => p.MissingBoundaryMargin, (p, v) => p.MissingBoundaryMargin = v, 0, 100);
+            advancedFlowPanel.Controls.Add(thresholds);
+
+            GroupBox darkDefect = CreateGroup("银面暗缺陷（Black Hat）", 630, 570);
+            FlowLayoutPanel darkFlow = CreateVerticalFlow();
+            darkDefect.Controls.Add(darkFlow);
+            AddInteger(darkFlow, "强暗灰度阈值", p => p.StrongDarkGrayThreshold, (p, v) => p.StrongDarkGrayThreshold = v, 0, 255);
+            AddInteger(darkFlow, "局部对比度阈值", p => p.LocalContrastThreshold, (p, v) => p.LocalContrastThreshold = v, 0, 255);
+            AddInteger(darkFlow, "局部背景核尺寸", p => p.DefectBackgroundKernelSize, (p, v) => p.DefectBackgroundKernelSize = v, 3, 255);
+            AddInteger(darkFlow, "形态学核尺寸", p => p.DefectMorphKernelSize, (p, v) => p.DefectMorphKernelSize = v, 3, 31);
+            AddInteger(darkFlow, "缺陷框扩展像素", p => p.DefectBoxPadding, (p, v) => p.DefectBoxPadding = v, 0, 200);
+            AddInteger(darkFlow, "缺陷框最小宽度", p => p.DefectBoxMinimumWidth, (p, v) => p.DefectBoxMinimumWidth = v, 1, 500);
+            AddInteger(darkFlow, "缺陷框最小高度", p => p.DefectBoxMinimumHeight, (p, v) => p.DefectBoxMinimumHeight = v, 1, 500);
+            AddInteger(darkFlow, "每侧最多缺陷数", p => p.MaximumDefectsPerSilverRegion, (p, v) => p.MaximumDefectsPerSilverRegion = v, 1, 20);
+            AddHelp(darkFlow, "强暗阈值筛选绝对灰度；局部对比度用于排除正常银面纹理；背景核应明显大于目标暗孔。偶数核保存时会自动转为奇数。");
+            advancedFlowPanel.Controls.Add(darkDefect);
+
+            GroupBox edgeDefect = CreateGroup("边缘缺银与完整显示", 630, 670);
+            FlowLayoutPanel edgeFlow = CreateVerticalFlow();
+            edgeDefect.Controls.Add(edgeFlow);
+            AddInteger(edgeFlow, "边缘银面灰度阈值", p => p.EdgeMaskGrayThreshold, (p, v) => p.EdgeMaskGrayThreshold = v, 0, 255);
+            AddInteger(edgeFlow, "单侧轮廓闭合核", p => p.EdgeMaskCloseKernelSize, (p, v) => p.EdgeMaskCloseKernelSize = v, 3, 255);
+            AddInteger(edgeFlow, "左右比较闭合核", p => p.PairedEdgeCloseKernelSize, (p, v) => p.PairedEdgeCloseKernelSize = v, 3, 255);
+            AddInteger(edgeFlow, "边缘检测深度", p => p.EdgeBandDepth, (p, v) => p.EdgeBandDepth = v, 1, 300);
+            AddInteger(edgeFlow, "轮廓接触深度", p => p.EdgeBoundaryContactDepth, (p, v) => p.EdgeBoundaryContactDepth = v, 1, 100);
+            AddInteger(edgeFlow, "边缘最小缺陷面积", p => p.EdgeMinimumDefectArea, (p, v) => p.EdgeMinimumDefectArea = v, 1, 100000);
+            AddInteger(edgeFlow, "边缘最小宽度", p => p.EdgeMinimumDefectWidth, (p, v) => p.EdgeMinimumDefectWidth = v, 1, 500);
+            AddInteger(edgeFlow, "边缘最小高度", p => p.EdgeMinimumDefectHeight, (p, v) => p.EdgeMinimumDefectHeight = v, 1, 500);
+            AddRatio(edgeFlow, "边缘最小填充率", p => p.EdgeMinimumDefectFillRatio, (p, v) => p.EdgeMinimumDefectFillRatio = v, 0, 100);
+            AddInteger(edgeFlow, "边缘框扩展像素", p => p.EdgeBoxPadding, (p, v) => p.EdgeBoxPadding = v, 0, 200);
+            AddInteger(edgeFlow, "每侧最多边缘缺陷", p => p.MaximumEdgeDefectsPerSilverRegion, (p, v) => p.MaximumEdgeDefectsPerSilverRegion = v, 1, 20);
+            AddInteger(edgeFlow, "画面完整显示边距", p => p.ModuleVisibleMargin, (p, v) => p.ModuleVisibleMargin = v, 0, 100);
+            AddRatio(edgeFlow, "边界深色占比上限", p => p.ModuleBorderDarkRatio, (p, v) => p.ModuleBorderDarkRatio = v, 0, 100);
+            AddHelp(edgeFlow, "物料外框接触画面边界时判定为未完整显示；不检查轻微角度、中心距或左右面积差。");
+            advancedFlowPanel.Controls.Add(edgeDefect);
+
+            GroupBox lineDefect = CreateGroup("线状暗沟", 630, 450);
+            FlowLayoutPanel lineFlow = CreateVerticalFlow();
+            lineDefect.Controls.Add(lineFlow);
+            AddInteger(lineFlow, "线状局部对比度", p => p.LineContrastThreshold, (p, v) => p.LineContrastThreshold = v, 0, 255);
+            AddInteger(lineFlow, "方向核长度", p => p.LineKernelLength, (p, v) => p.LineKernelLength = v, 3, 255);
+            AddInteger(lineFlow, "最小线长度", p => p.LineMinimumLength, (p, v) => p.LineMinimumLength = v, 1, 1000);
+            AddInteger(lineFlow, "最大线宽度", p => p.LineMaximumWidth, (p, v) => p.LineMaximumWidth = v, 1, 500);
+            AddInteger(lineFlow, "最小线面积", p => p.LineMinimumArea, (p, v) => p.LineMinimumArea = v, 1, 100000);
+            AddInteger(lineFlow, "线状框扩展像素", p => p.LineBoxPadding, (p, v) => p.LineBoxPadding = v, 0, 200);
+            AddHelp(lineFlow, "分别使用横向与纵向 Black Hat 核，只保留长度足够且宽度受限的暗线候选。");
+            advancedFlowPanel.Controls.Add(lineDefect);
+
+            GroupBox filter = CreateGroup("暗缺陷连通域过滤", 630, 430);
+            FlowLayoutPanel filterFlow = CreateVerticalFlow();
+            filter.Controls.Add(filterFlow);
+            AddInteger(filterFlow, "最小缺陷面积(px)", p => p.MinimumDefectArea, (p, v) => p.MinimumDefectArea = v, 1, 100000);
+            AddRatio(filterFlow, "最小相对面积", p => p.MinimumDefectAreaRatio, (p, v) => p.MinimumDefectAreaRatio = v, 0, 10);
+            AddInteger(filterFlow, "最小宽度", p => p.MinimumDefectWidth, (p, v) => p.MinimumDefectWidth = v, 1, 500);
+            AddInteger(filterFlow, "最小高度", p => p.MinimumDefectHeight, (p, v) => p.MinimumDefectHeight = v, 1, 500);
+            AddRatio(filterFlow, "最小填充率", p => p.MinimumDefectFillRatio, (p, v) => p.MinimumDefectFillRatio = v, 0, 100);
+            AddNumber(filterFlow, "最小长宽比", p => p.MinimumDefectAspectRatio, (p, v) => p.MinimumDefectAspectRatio = v, 0.01m, 100, 2);
+            AddNumber(filterFlow, "最大长宽比", p => p.MaximumDefectAspectRatio, (p, v) => p.MaximumDefectAspectRatio = v, 0.01m, 100, 2);
+            advancedFlowPanel.Controls.Add(filter);
+        }
+
+        private void BuildCameraStoragePage()
+        {
+            GroupBox detection = CreateCameraGroup("检测相机", out detectionExposure, out detectionGain,
+                out detectionRawPath, out detectionOkPath, out detectionNgPath);
+            GroupBox classification = CreateCameraGroup("分类相机", out classificationExposure, out classificationGain,
+                out classificationRawPath, out classificationOkPath, out classificationNgPath);
+            cameraStorageFlowPanel.Controls.Add(detection);
+            cameraStorageFlowPanel.Controls.Add(classification);
+        }
+
+        private void BuildSystemPage()
+        {
+            GroupBox group = CreateGroup("系统维护", 630, 250);
+            FlowLayoutPanel flow = CreateVerticalFlow();
+            group.Controls.Add(flow);
+            permissionTimeout = CreateStandaloneIntegerRow(flow, "管理员无操作退出(分钟)", 1, 1440);
+            retentionDays = CreateStandaloneIntegerRow(flow, "图片保留天数", 1, 3650);
+            AddHelp(flow, "框比例参数已移到“料号设置”页面，并按当前料号分别保存。系统固定使用检测相机和分类相机两台设备。");
+            systemFlowPanel.Controls.Add(group);
+        }
+
+        private GroupBox CreateCameraGroup(
+            string title,
+            out NumericUpDown exposure,
+            out NumericUpDown gain,
+            out TextBox raw,
+            out TextBox ok,
+            out TextBox ng)
+        {
+            GroupBox group = CreateGroup(title, 650, 430);
+            var table = new TableLayoutPanel
             {
-                case 1:
-                textBox6.ReadOnly = true;
-                textBox17.ReadOnly = true;
-                textBox18.ReadOnly = true;
-                textBox5.ReadOnly = true;
-                textBox4.ReadOnly = true;
-
-                button6.Enabled = false;
-                button17.Enabled = false;
-                button18.Enabled = false;
-                button5.Enabled = false;
-                button4.Enabled = false;
-
-                textBox11.ReadOnly = true;
-                textBox20.ReadOnly = true;
-                textBox19.ReadOnly = true;
-                textBox10.ReadOnly = true;
-                textBox9.ReadOnly = true;
-
-                button11.Enabled = false;
-                button20.Enabled = false;
-                button19.Enabled = false;
-                button10.Enabled = false;
-                button9.Enabled = false;
-
-                textBox14.ReadOnly = true;
-                textBox22.ReadOnly = true;
-                textBox21.ReadOnly = true;
-                textBox13.ReadOnly = true;
-                textBox12.ReadOnly = true;
-
-                button14.Enabled = false;
-                button22.Enabled = false;
-                button21.Enabled = false;
-                button13.Enabled = false;
-                button12.Enabled = false;
-
-                button23.Enabled = true;
-                button24.Enabled = false;
-                button25.Enabled = false;
-                button26.Enabled = false;
-                   
-                
-
-                    break;
-            
-             case 2:
-                textBox6.ReadOnly = false;
-                textBox17.ReadOnly = false;
-                textBox18.ReadOnly = false;
-                textBox5.ReadOnly = false;
-                textBox4.ReadOnly = false;
-
-                button6.Enabled = true;
-                button17.Enabled = true;
-                button18.Enabled = true;
-                button5.Enabled = true;
-                button4.Enabled = true;
-
-                textBox11.ReadOnly = true;
-                textBox20.ReadOnly = true;
-                textBox19.ReadOnly = true;
-                textBox10.ReadOnly = true;
-                textBox9.ReadOnly = true;
-
-                button11.Enabled = false;
-                button20.Enabled = false;
-                button19.Enabled = false;
-                button10.Enabled = false;
-                button9.Enabled = false;
-
-                textBox14.ReadOnly = true;
-                textBox22.ReadOnly = true;
-                textBox21.ReadOnly = true;
-                textBox13.ReadOnly = true;
-                textBox12.ReadOnly = true;
-
-                button14.Enabled = false;
-                button22.Enabled = false;
-                button21.Enabled = false;
-                button13.Enabled = false;
-                button12.Enabled = false;
-
-                button23.Enabled = true;
-                button24.Enabled = true;
-                button25.Enabled = false;
-                button26.Enabled = false;
-                   
-               
-               
-
-                    break;
-
-              case 3:
-                    textBox6.ReadOnly = false;
-                    textBox17.ReadOnly = false;
-                    textBox18.ReadOnly = false;
-                    textBox5.ReadOnly = false;
-                    textBox4.ReadOnly = false;
-
-                    button6.Enabled = true;
-                    button17.Enabled = true;
-                    button18.Enabled = true;
-                    button5.Enabled = true;
-                    button4.Enabled = true;
-
-                    textBox11.ReadOnly = false;
-                    textBox20.ReadOnly =false;
-                    textBox19.ReadOnly = false;
-                    textBox10.ReadOnly = false;
-                    textBox9.ReadOnly = false;
-
-                    button11.Enabled = true;
-                    button20.Enabled = true;
-                    button19.Enabled = true;
-                    button10.Enabled = true;
-                    button9.Enabled = true;
-
-                    textBox14.ReadOnly = true;
-                    textBox22.ReadOnly = true;
-                    textBox21.ReadOnly = true;
-                    textBox13.ReadOnly = true;
-                    textBox12.ReadOnly = true;
-
-                    button14.Enabled = false;
-                    button22.Enabled = false;
-                    button21.Enabled = false;
-                    button13.Enabled = false;
-                    button12.Enabled = false;
-
-                    button23.Enabled = true;
-                    button24.Enabled = true;
-                    button25.Enabled = true;
-                    button26.Enabled = false;
-                   
-                    
-
-                    break;
-                case 4:
-                    textBox6.ReadOnly = false;
-                    textBox17.ReadOnly = false;
-                    textBox18.ReadOnly = false;
-                    textBox5.ReadOnly = false;
-                    textBox4.ReadOnly = false;
-
-                    button6.Enabled = true;
-                    button17.Enabled = true;
-                    button18.Enabled = true;
-                    button5.Enabled = true;
-                    button4.Enabled = true;
-
-                    textBox11.ReadOnly = false;
-                    textBox20.ReadOnly = false;
-                    textBox19.ReadOnly = false;
-                    textBox10.ReadOnly = false;
-                    textBox9.ReadOnly = false;
-
-                    button11.Enabled = true;
-                    button20.Enabled = true;
-                    button19.Enabled = true;
-                    button10.Enabled = true;
-                    button9.Enabled = true;
-
-                    textBox14.ReadOnly = false;
-                    textBox22.ReadOnly = false;
-                    textBox21.ReadOnly = false;
-                    textBox13.ReadOnly = false;
-                    textBox12.ReadOnly = false;
-
-                    button14.Enabled = true;
-                    button22.Enabled = true;
-                    button21.Enabled = true;
-                    button13.Enabled = true;
-                    button12.Enabled = true;
-
-
-                    button23.Enabled = true;
-                    button24.Enabled = true;
-                    button25.Enabled = true;
-                    button26.Enabled = true;
-                    
-                        
-                        
-                    break;
-            }
+                Dock = DockStyle.Fill,
+                Padding = new Padding(12),
+                ColumnCount = 3,
+                RowCount = 5
+            };
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 85));
+            exposure = AddCameraNumber(table, 0, "曝光时间", 1, 1000000, 0);
+            gain = AddCameraNumber(table, 1, "增益", 0, 24, 2);
+            raw = AddPathRow(table, 2, "原图路径");
+            ok = AddPathRow(table, 3, "OK图路径");
+            ng = AddPathRow(table, 4, "NG/复检图路径");
+            group.Controls.Add(table);
+            return group;
         }
 
-        private void button8_Click(object sender, EventArgs e)
+        private NumericUpDown AddCameraNumber(TableLayoutPanel table, int row, string label, decimal min, decimal max, int decimals)
         {
-            textBox1.Text = Properties.Settings.Default.相机1图片保存路径;
-            textBox2.Text = Properties.Settings.Default.相机1hdl文件路径;
-            textBox3.Text = Properties.Settings.Default.相机1hdict文件路径;
-            textBox15.Text = Properties.Settings.Default.相机1OK图保存路径;
-            textBox16.Text = Properties.Settings.Default.相机1NG图保存路径;
-
-            textBox6.Text = Properties.Settings.Default.相机2图片保存路径;
-            textBox5.Text = Properties.Settings.Default.相机2hdl文件路径;
-            textBox4.Text = Properties.Settings.Default.相机2hdict文件路径;
-            textBox17.Text = Properties.Settings.Default.相机3OK图保存路径;
-            textBox18.Text = Properties.Settings.Default.相机3NG图保存路径;
-
-            textBox11.Text = Properties.Settings.Default.相机3图片保存路径;
-            textBox10.Text = Properties.Settings.Default.相机3hdl文件路径;
-            textBox9.Text = Properties.Settings.Default.相机3hdict文件路径;
-            textBox20.Text = Properties.Settings.Default.相机3OK图保存路径;
-            textBox19.Text = Properties.Settings.Default.相机3NG图保存路径;
-
-
-            textBox14.Text = Properties.Settings.Default.相机4图片保存路径;
-            textBox13.Text = Properties.Settings.Default.相机4hdl文件路径;
-            textBox12.Text = Properties.Settings.Default.相机4hdict文件路径;
-            textBox22.Text = Properties.Settings.Default.相机4OK图保存路径;
-            textBox21.Text = Properties.Settings.Default.相机4NG图保存路径;
-
-            textBox7.Text = Properties.Settings.Default.权限时间设置;
-            comboBox1.Text = ClampCameraCountText(Properties.Settings.Default.相机数量设置);
-            textBox8.Text = Properties.Settings.Default.图片删除时间;
-            comboBox2.Text = Properties.Settings.Default.当前料号;
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+            table.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
+            var numeric = new NumericUpDown { Minimum = min, Maximum = max, DecimalPlaces = decimals, Dock = DockStyle.Fill, Margin = new Padding(3, 13, 3, 13) };
+            table.Controls.Add(numeric, 1, row);
+            return numeric;
         }
 
-        private void button23_Click(object sender, EventArgs e)
+        private TextBox AddPathRow(TableLayoutPanel table, int row, string label)
         {
-            裁图类.截图分类(1, "相机1深度学习模板/待分类图片");
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+            table.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
+            var text = new TextBox { Dock = DockStyle.Fill, ReadOnly = true, Margin = new Padding(3, 16, 3, 10) };
+            var button = new Button { Text = "浏览", Dock = DockStyle.Fill, Margin = new Padding(4, 10, 4, 10) };
+            button.Click += (s, e) => BrowseFolder(text);
+            table.Controls.Add(text, 1, row);
+            table.Controls.Add(button, 2, row);
+            return text;
         }
 
-        private void button24_Click(object sender, EventArgs e)
+        private void BrowseFolder(TextBox target)
         {
-            裁图类.截图分类(2, "相机2深度学习模板/待分类图片");
-        }
-
-        private void button25_Click(object sender, EventArgs e)
-        {
-            裁图类.截图分类(3, "相机3深度学习模板/待分类图片");
-        }
-
-        private void button26_Click(object sender, EventArgs e)
-        {
-            裁图类.截图分类(4, "相机4深度学习模板/待分类图片");
-        }
-
-        private void comboBox2_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (comboBox2.SelectedItem == null) return;
-            bool 只显示 = false;
-            string 料号 = comboBox2.SelectedItem.ToString();
-            bool ok = 料号切换读取文件.加载料号到全局变量(料号,只显示);
-
-            textBox1.Text = 数据变量.相机1原图保存路径;
-            textBox2.Text = 数据变量.相机1hdl文件路径;
-            textBox3.Text = 数据变量.相机1hdict文件路径;
-            textBox15.Text = 数据变量.相机1OK图保存路径;
-            textBox16.Text = 数据变量.相机1NG图保存路径;
-
-            textBox6.Text = 数据变量.相机2原图保存路径;
-            textBox5.Text =数据变量.相机2hdl文件路径;
-            textBox4.Text = 数据变量.相机2hdict文件路径;
-            textBox17.Text = 数据变量.相机3OK图保存路径;
-            textBox18.Text =数据变量.相机3NG图保存路径;
-
-            textBox11.Text = 数据变量.相机3原图保存路径;
-            textBox10.Text = 数据变量.相机3hdl文件路径;
-            textBox9.Text = 数据变量.相机3hdict文件路径;
-            textBox20.Text = 数据变量.相机3OK图保存路径;
-            textBox19.Text = 数据变量.相机3NG图保存路径;
-
-
-            textBox14.Text = 数据变量.相机4原图保存路径;
-            textBox13.Text = 数据变量.相机4hdl文件路径;
-            textBox12.Text = 数据变量.相机4hdict文件路径;
-            textBox22.Text = 数据变量.相机4OK图保存路径;
-            textBox21.Text = 数据变量.相机4NG图保存路径;
-
-            textBox7.Text = 数据变量.权限时间;
-            comboBox1.Text = ClampCameraCountText(数据变量.相机数量设置);
-            textBox8.Text =数据变量.图片删除日期;
-           
-        }
-
-        private static void 验证Onnx模型(string modelPath)
-        {
-            using (var detector = new DeimOnnxDetector(modelPath, 0.4f))
+            using (var dialog = new FolderBrowserDialog())
             {
-                // 构造成功即表示文件存在且输入输出符合DEIM导出格式。
+                if (Directory.Exists(target.Text)) dialog.SelectedPath = target.Text;
+                if (dialog.ShowDialog() == DialogResult.OK) target.Text = dialog.SelectedPath;
             }
         }
 
-        private void panel1_Paint(object sender, PaintEventArgs e)
+        private void AddRatioPair(
+            FlowLayoutPanel parent,
+            string title,
+            Func<InspectionParameters, double> reviewGetter,
+            Action<InspectionParameters, double> reviewSetter,
+            Func<InspectionParameters, double> ngGetter,
+            Action<InspectionParameters, double> ngSetter)
         {
-
+            var row = new TableLayoutPanel { Width = 580, Height = 70, ColumnCount = 5 };
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 170));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 48));
+            row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            row.Controls.Add(new Label { Text = title, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+            row.Controls.Add(new Label { Text = "复检≥", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight }, 1, 0);
+            NumericUpDown review = CreateNumeric(0, 100, 3, 0.01m);
+            review.Dock = DockStyle.Fill;
+            row.Controls.Add(review, 2, 0);
+            row.Controls.Add(new Label { Text = "NG>", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight }, 3, 0);
+            NumericUpDown ng = CreateNumeric(0, 100, 3, 0.01m);
+            ng.Dock = DockStyle.Fill;
+            row.Controls.Add(ng, 4, 0);
+            Bind(review, () => (decimal)(reviewGetter(parameters.Inspection) * 100), v => reviewSetter(parameters.Inspection, (double)v / 100));
+            Bind(ng, () => (decimal)(ngGetter(parameters.Inspection) * 100), v => ngSetter(parameters.Inspection, (double)v / 100));
+            parent.Controls.Add(row);
         }
 
-        private void splitContainer1_Panel2_Paint(object sender, PaintEventArgs e)
+        private void AddRatio(FlowLayoutPanel parent, string label,
+            Func<InspectionParameters, double> getter, Action<InspectionParameters, double> setter,
+            decimal min, decimal max)
         {
+            AddParameterRow(parent, label, min, max, 3, 0.01m, "%",
+                () => (decimal)(getter(parameters.Inspection) * 100),
+                v => setter(parameters.Inspection, (double)v / 100));
+        }
 
+        private void AddInteger(FlowLayoutPanel parent, string label,
+            Func<InspectionParameters, int> getter, Action<InspectionParameters, int> setter,
+            decimal min, decimal max)
+        {
+            AddParameterRow(parent, label, min, max, 0, 1, string.Empty,
+                () => getter(parameters.Inspection),
+                v => setter(parameters.Inspection, Decimal.ToInt32(v)));
+        }
+
+        private void AddNumber(FlowLayoutPanel parent, string label,
+            Func<InspectionParameters, double> getter, Action<InspectionParameters, double> setter,
+            decimal min, decimal max, int decimals)
+        {
+            AddParameterRow(parent, label, min, max, decimals, 0.01m, string.Empty,
+                () => (decimal)getter(parameters.Inspection),
+                v => setter(parameters.Inspection, (double)v));
+        }
+
+        private void AddParameterRow(FlowLayoutPanel parent, string label,
+            decimal min, decimal max, int decimals, decimal increment, string unit,
+            Func<decimal> getter, Action<decimal> setter)
+        {
+            var row = new Panel { Width = 580, Height = 50 };
+            row.Controls.Add(new Label { Text = label, Location = new Point(4, 10), Size = new Size(250, 28), TextAlign = ContentAlignment.MiddleLeft });
+            NumericUpDown numeric = CreateNumeric(min, max, decimals, increment);
+            numeric.Location = new Point(265, 9);
+            numeric.Size = new Size(220, 28);
+            row.Controls.Add(numeric);
+            row.Controls.Add(new Label { Text = unit, Location = new Point(495, 10), Size = new Size(45, 28), TextAlign = ContentAlignment.MiddleLeft });
+            Bind(numeric, getter, setter);
+            parent.Controls.Add(row);
+        }
+
+        private NumericUpDown CreateStandaloneIntegerRow(FlowLayoutPanel parent, string label, int min, int max)
+        {
+            var row = new Panel { Width = 580, Height = 52 };
+            row.Controls.Add(new Label { Text = label, Location = new Point(4, 10), Size = new Size(280, 28), TextAlign = ContentAlignment.MiddleLeft });
+            var numeric = CreateNumeric(min, max, 0, 1);
+            numeric.Location = new Point(300, 9);
+            numeric.Size = new Size(180, 28);
+            row.Controls.Add(numeric);
+            parent.Controls.Add(row);
+            return numeric;
+        }
+
+        private static NumericUpDown CreateNumeric(decimal min, decimal max, int decimals, decimal increment)
+        {
+            return new NumericUpDown
+            {
+                Minimum = min,
+                Maximum = max,
+                DecimalPlaces = decimals,
+                Increment = increment,
+                Margin = new Padding(3, 18, 3, 18),
+                ThousandsSeparator = true
+            };
+        }
+
+        private void Bind(NumericUpDown numeric, Func<decimal> getter, Action<decimal> setter)
+        {
+            bindActions.Add(() => numeric.Value = Math.Max(numeric.Minimum, Math.Min(numeric.Maximum, getter())));
+            numeric.ValueChanged += (s, e) =>
+            {
+                if (loading) return;
+                setter(numeric.Value);
+                SchedulePreview();
+            };
+        }
+
+        private void livePreviewCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (previewTimer == null) return;
+            if (livePreviewCheckBox.Checked)
+            {
+                SchedulePreview();
+            }
+            else
+            {
+                previewTimer.Stop();
+                statusLabel.Text = "实时预览已关闭；保存参数后仍会刷新当前调试图。";
+            }
+        }
+
+        private void SchedulePreview()
+        {
+            if (loading || previewTimer == null || !livePreviewCheckBox.Checked)
+                return;
+            previewTimer.Stop();
+            previewTimer.Start();
+        }
+
+        private void previewTimer_Tick(object sender, EventArgs e)
+        {
+            previewTimer.Stop();
+            RequestPreview(updateStatus: true);
+        }
+
+        private void RequestPreview(bool updateStatus)
+        {
+            if (parameters?.Inspection == null) return;
+            InspectionParameters snapshot = parameters.Inspection.Clone();
+            snapshot.Validate();
+            bool updated = PreviewRequested?.Invoke(snapshot) ?? false;
+            if (!updateStatus) return;
+            statusLabel.Text = updated
+                ? "预览已更新，切换到调试页面可查看；当前修改尚未保存。"
+                : "调试页面尚未加载图片，请先在调试页面选择图片文件夹。";
+        }
+
+        private void BindAll()
+        {
+            loading = true;
+            try
+            {
+                foreach (Action action in bindActions) action();
+                detectionExposure.Value = Clamp((decimal)parameters.DetectionCamera.Exposure, detectionExposure);
+                detectionGain.Value = Clamp((decimal)parameters.DetectionCamera.Gain, detectionGain);
+                classificationExposure.Value = Clamp((decimal)parameters.ClassificationCamera.Exposure, classificationExposure);
+                classificationGain.Value = Clamp((decimal)parameters.ClassificationCamera.Gain, classificationGain);
+                detectionRawPath.Text = parameters.DetectionCamera.RawImagePath;
+                detectionOkPath.Text = parameters.DetectionCamera.OkImagePath;
+                detectionNgPath.Text = parameters.DetectionCamera.NgImagePath;
+                classificationRawPath.Text = parameters.ClassificationCamera.RawImagePath;
+                classificationOkPath.Text = parameters.ClassificationCamera.OkImagePath;
+                classificationNgPath.Text = parameters.ClassificationCamera.NgImagePath;
+                permissionTimeout.Value = Clamp(parameters.PermissionTimeoutMinutes, permissionTimeout);
+                retentionDays.Value = Clamp(parameters.ImageRetentionDays, retentionDays);
+            }
+            finally
+            {
+                loading = false;
+            }
+        }
+
+        private static decimal Clamp(decimal value, NumericUpDown control)
+        {
+            return Math.Max(control.Minimum, Math.Min(control.Maximum, value));
+        }
+
+        private static GroupBox CreateGroup(string title, int width, int height)
+        {
+            return new GroupBox
+            {
+                Text = title,
+                Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
+                Width = width,
+                Height = height,
+                Padding = new Padding(12),
+                Margin = new Padding(12)
+            };
+        }
+
+        private static FlowLayoutPanel CreateVerticalFlow()
+        {
+            return new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true
+            };
+        }
+
+        private static void AddHelp(FlowLayoutPanel parent, string text)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                ForeColor = Color.DimGray,
+                Width = 570,
+                Height = 60,
+                Padding = new Padding(4),
+                AutoEllipsis = true
+            });
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            previewTimer?.Stop();
+            previewTimer?.Dispose();
+            base.OnFormClosed(e);
         }
     }
 }

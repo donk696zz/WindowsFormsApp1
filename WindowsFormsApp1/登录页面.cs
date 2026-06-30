@@ -13,6 +13,7 @@ namespace WindowsFormsApp1
     public partial class 登录页面 : Form
     {
         public event Action<int,string> LogAdded;
+        public event Action 登录成功;
         Dictionary<string, string> _账号密码;
         public 登录页面()
         {
@@ -47,7 +48,7 @@ namespace WindowsFormsApp1
                     LogAdded?.Invoke(1, "登录成功!");
                     状态.登录权限 = true;
                     timer1.Stop();
-                    timer1.Interval = int.Parse(Properties.Settings.Default.权限时间设置) * 60 * 1000; // 10分钟
+                    timer1.Interval = VisionParameterStore.ApplicationParameters.PermissionTimeoutMinutes * 60 * 1000;
                     timer1.Start();
                     if(checkBox2.Checked)
                     {
@@ -58,6 +59,7 @@ namespace WindowsFormsApp1
                     {
                         textBox1.Text = null;
                     }
+                    登录成功?.Invoke();
                 }
                 else
                 {

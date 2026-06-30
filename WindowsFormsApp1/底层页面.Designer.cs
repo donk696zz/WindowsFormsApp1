@@ -97,7 +97,7 @@
             this.配方界面ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.配方界面ToolStripMenuItem.Name = "配方界面ToolStripMenuItem";
             this.配方界面ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
-            this.配方界面ToolStripMenuItem.Text = "配方界面";
+            this.配方界面ToolStripMenuItem.Text = "料号设置";
             this.配方界面ToolStripMenuItem.Click += new System.EventHandler(this.配方界面ToolStripMenuItem_Click);
             // 
             // 调试界面ToolStripMenuItem
@@ -134,7 +134,7 @@
             this.料号添加ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.料号添加ToolStripMenuItem.Name = "料号添加ToolStripMenuItem";
             this.料号添加ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
-            this.料号添加ToolStripMenuItem.Text = "料号添加";
+            this.料号添加ToolStripMenuItem.Text = "料号管理";
             this.料号添加ToolStripMenuItem.Click += new System.EventHandler(this.料号添加ToolStripMenuItem_Click);
             // 
             // 底层页面

@@ -123,24 +123,26 @@ namespace WindowsFormsApp1
 
     public static class ModuleRegionLocator
     {
-        private const int DarkThreshold = 145;
-        private const double SilverOuterEdgeRatio = 0.029;
-        private const double SilverInnerEdgeRatio = 0.335;
-        private const double MiddleWidthRatio = 0.27;
-        private const double TopEdgeRatio = 0.055;
-        private const double BottomEdgeRatio = 0.055;
-
         public static ModuleRegionResult Locate(Mat source)
+        {
+            return Locate(source, VisionParameterStore.CurrentMaterialProfile.Regions);
+        }
+
+        public static ModuleRegionResult Locate(Mat source, RegionParameters parameters)
         {
             if (source == null || source.Empty())
                 throw new ArgumentException("source image is empty.", nameof(source));
+            if (parameters == null)
+                throw new ArgumentNullException(nameof(parameters));
+
+            parameters.Validate();
 
             using (Mat bgr = OpenCvImageHelper.EnsureBgr8(source))
             using (Mat gray = new Mat())
             {
                 Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
-                Rect module = LocateModuleBox(gray);
-                return BuildRegions(module, gray.Width, gray.Height);
+                Rect module = LocateModuleBox(gray, parameters);
+                return BuildRegions(module, gray.Width, gray.Height, parameters);
             }
         }
 
@@ -163,7 +165,7 @@ namespace WindowsFormsApp1
             return output;
         }
 
-        private static Rect LocateModuleBox(Mat gray)
+        private static Rect LocateModuleBox(Mat gray, RegionParameters parameters)
         {
             int width = gray.Width;
             int height = gray.Height;
@@ -173,30 +175,43 @@ namespace WindowsFormsApp1
             for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++)
             {
-                if (gray.At<byte>(y, x) < DarkThreshold)
+                if (gray.At<byte>(y, x) < parameters.ModuleDarkThreshold)
                 {
                     columns[x]++;
                     rows[y]++;
                 }
             }
 
-            int columnThreshold = Math.Max(8, (int)(height * 0.025));
-            int rowThreshold = Math.Max(20, (int)(width * 0.04));
-            Rect xRun = FindOuterSpan(Smooth(columns, 8), columnThreshold, 8, 5);
-            Rect yRun = FindOuterSpan(Smooth(rows, 5), rowThreshold, 6, 4);
+            int columnThreshold = Math.Max(parameters.ColumnActivationMinimum,
+                (int)(height * parameters.ColumnActivationRatio));
+            int rowThreshold = Math.Max(parameters.RowActivationMinimum,
+                (int)(width * parameters.RowActivationRatio));
+            Rect xRun = FindOuterSpan(
+                Smooth(columns, parameters.ColumnSmoothRadius), columnThreshold,
+                parameters.ColumnSupportRadius, parameters.ColumnMinimumSupport);
+            Rect yRun = FindOuterSpan(
+                Smooth(rows, parameters.RowSmoothRadius), rowThreshold,
+                parameters.RowSupportRadius, parameters.RowMinimumSupport);
 
             return ClampRect(new Rect(xRun.X, yRun.X, xRun.Width, yRun.Width), width, height);
         }
 
-        private static ModuleRegionResult BuildRegions(Rect module, int imageWidth, int imageHeight)
+        private static ModuleRegionResult BuildRegions(
+            Rect module,
+            int imageWidth,
+            int imageHeight,
+            RegionParameters parameters)
         {
-            int silverOuterOffset = Math.Max(0, (int)Math.Round(module.Width * SilverOuterEdgeRatio));
-            int silverInnerOffset = Math.Max(silverOuterOffset + 1, (int)Math.Round(module.Width * SilverInnerEdgeRatio));
-            int topEdgeHeight = Math.Max(1, (int)Math.Round(module.Height * TopEdgeRatio));
-            int bottomEdgeHeight = Math.Max(1, (int)Math.Round(module.Height * BottomEdgeRatio));
-            int middleWidth = Math.Max(1, (int)Math.Round(module.Width * MiddleWidthRatio));
-            int contentY = module.Y + topEdgeHeight;
-            int contentHeight = Math.Max(1, module.Height - topEdgeHeight - bottomEdgeHeight);
+            int silverOuterOffset = Math.Max(0, (int)Math.Round(module.Width * parameters.SilverOuterEdgeRatio));
+            int silverInnerOffset = Math.Max(silverOuterOffset + 1, (int)Math.Round(module.Width * parameters.SilverInnerEdgeRatio));
+            int silverTopOffset = Math.Max(1, (int)Math.Round(module.Height * parameters.SilverTopRatio));
+            int silverBottomOffset = Math.Max(1, (int)Math.Round(module.Height * parameters.SilverBottomRatio));
+            int topInspectHeight = Math.Max(1, (int)Math.Round(module.Height * parameters.TopInspectHeightRatio));
+            int bottomInspectHeight = Math.Max(1, (int)Math.Round(module.Height * parameters.BottomInspectHeightRatio));
+            int sideInspectWidth = Math.Max(1, (int)Math.Round(module.Width * parameters.SideInspectWidthRatio));
+            int middleWidth = Math.Max(1, (int)Math.Round(module.Width * parameters.MiddleWidthRatio));
+            int contentY = module.Y + silverTopOffset;
+            int contentHeight = Math.Max(1, module.Height - silverTopOffset - silverBottomOffset);
 
             Rect leftSilver = ClampRect(new Rect(
                 module.X + silverOuterOffset,
@@ -217,31 +232,31 @@ namespace WindowsFormsApp1
                 module.X,
                 module.Y,
                 silverInnerOffset,
-                topEdgeHeight), imageWidth, imageHeight);
+                topInspectHeight), imageWidth, imageHeight);
             Rect leftBottomEdge = ClampRect(new Rect(
                 module.X,
-                module.Y + module.Height - bottomEdgeHeight,
+                module.Y + module.Height - bottomInspectHeight,
                 silverInnerOffset,
-                bottomEdgeHeight), imageWidth, imageHeight);
+                bottomInspectHeight), imageWidth, imageHeight);
             Rect leftSideEdge = ClampRect(new Rect(
                 module.X,
                 contentY,
-                leftSilver.X - module.X,
+                sideInspectWidth,
                 contentHeight), imageWidth, imageHeight);
             Rect rightTopEdge = ClampRect(new Rect(
                 module.X + module.Width - silverInnerOffset,
                 module.Y,
                 silverInnerOffset,
-                topEdgeHeight), imageWidth, imageHeight);
+                topInspectHeight), imageWidth, imageHeight);
             Rect rightBottomEdge = ClampRect(new Rect(
                 module.X + module.Width - silverInnerOffset,
-                module.Y + module.Height - bottomEdgeHeight,
+                module.Y + module.Height - bottomInspectHeight,
                 silverInnerOffset,
-                bottomEdgeHeight), imageWidth, imageHeight);
+                bottomInspectHeight), imageWidth, imageHeight);
             Rect rightSideEdge = ClampRect(new Rect(
-                rightSilver.X + rightSilver.Width,
+                module.X + module.Width - sideInspectWidth,
                 contentY,
-                module.X + module.Width - (rightSilver.X + rightSilver.Width),
+                sideInspectWidth,
                 contentHeight), imageWidth, imageHeight);
 
             var result = new ModuleRegionResult { ModuleBox = module };
@@ -365,6 +380,8 @@ namespace WindowsFormsApp1
                 case ModuleRegionType.RightSilverBottomEdge:
                 case ModuleRegionType.RightSilverSideEdge:
                     return Scalar.Orange;
+                case ModuleRegionType.LeftSilver:
+                case ModuleRegionType.RightSilver:
                 case ModuleRegionType.Middle:
                     return Scalar.Lime;
                 default:
@@ -402,23 +419,45 @@ namespace WindowsFormsApp1
         }
     }
 
+    public enum ModuleInspectionDecision
+    {
+        Ok,
+        Ng,
+        Review
+    }
+
     public sealed class ModuleInspectionResult
     {
         public ModuleInspectionResult()
         {
             Reasons = new System.Collections.Generic.List<string>();
+            ReviewReasons = new System.Collections.Generic.List<string>();
             ErrorRegions = new System.Collections.Generic.List<ModuleErrorRegion>();
         }
 
         public bool IsOk { get; set; }
+        public ModuleInspectionDecision Decision { get; set; }
+        public bool RequiresReview => Decision == ModuleInspectionDecision.Review;
         public System.Collections.Generic.List<string> Reasons { get; private set; }
+        public System.Collections.Generic.List<string> ReviewReasons { get; private set; }
         public double MiddleSilverRatio { get; set; }
         public double LeftSilverCoverage { get; set; }
         public double RightSilverCoverage { get; set; }
+        public double LeftSilverTopCoverage { get; set; }
+        public double LeftSilverBottomCoverage { get; set; }
+        public double RightSilverTopCoverage { get; set; }
+        public double RightSilverBottomCoverage { get; set; }
         public double LeftMaxMissingRatio { get; set; }
         public double RightMaxMissingRatio { get; set; }
         public double LeftInnerDefectRatio { get; set; }
         public double RightInnerDefectRatio { get; set; }
+        public double LeftEdgeMissingRatio { get; set; }
+        public double RightEdgeMissingRatio { get; set; }
+        public double LeftPairedEdgeRatio { get; set; }
+        public double RightPairedEdgeRatio { get; set; }
+        public double LeftLineDefectRatio { get; set; }
+        public double RightLineDefectRatio { get; set; }
+        public bool ModuleFullyVisible { get; set; } = true;
         public double EdgeSilverRatio { get; set; }
         public string EdgeSilverRegion { get; set; }
         public ModuleRegionResult Regions { get; set; }
@@ -428,7 +467,14 @@ namespace WindowsFormsApp1
 
         public string ReasonText
         {
-            get { return Reasons.Count == 0 ? "OK" : string.Join("; ", Reasons); }
+            get
+            {
+                if (Decision == ModuleInspectionDecision.Ng)
+                    return string.Join("; ", Reasons);
+                if (Decision == ModuleInspectionDecision.Review)
+                    return string.Join("; ", ReviewReasons);
+                return "OK";
+            }
         }
     }
 
@@ -436,30 +482,44 @@ namespace WindowsFormsApp1
     {
         public Rect Box { get; set; }
         public string Label { get; set; }
+        public bool IsReview { get; set; }
     }
 
     public static class ModuleInspector
     {
-        private const double MiddleSilverMaxRatio = 0.01;
-        private const double SilverCoverageMinRatio = 0.80;
-        private const double SilverMaxMissingBlobRatio = 0.10;
-        private const double SilverInnerDefectMaxRatio = 0.006;
-        private const double EdgeSilverMaxRatio = 0.05;
-
         public static ModuleInspectionResult Inspect(Mat source)
+        {
+            return Inspect(
+                source,
+                VisionParameterStore.CurrentMaterialProfile.Regions,
+                VisionParameterStore.ApplicationParameters.Inspection);
+        }
+
+        public static ModuleInspectionResult Inspect(
+            Mat source,
+            RegionParameters regionParameters,
+            InspectionParameters inspectionParameters)
         {
             if (source == null || source.Empty())
                 throw new ArgumentException("source image is empty.", nameof(source));
+            if (regionParameters == null)
+                throw new ArgumentNullException(nameof(regionParameters));
+            if (inspectionParameters == null)
+                throw new ArgumentNullException(nameof(inspectionParameters));
 
-            ModuleRegionResult regions = ModuleRegionLocator.Locate(source);
+            regionParameters.Validate();
+            inspectionParameters.Validate();
+
+            ModuleRegionResult regions = ModuleRegionLocator.Locate(source, regionParameters);
             using (Mat bgr = OpenCvImageHelper.EnsureBgr8(source))
             using (Mat gray = new Mat())
-            using (Mat silverMask = CreateSilverMask(bgr))
-            using (Mat edgeSilverMask = CreateEdgeSilverMask(bgr))
+            using (Mat silverMask = CreateSilverMask(bgr, inspectionParameters.SilverGrayThreshold))
+            using (Mat edgeSilverMask = CreateEdgeSilverMask(bgr, inspectionParameters.EdgeSilverGrayThreshold))
             {
                 Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
 
                 Rect middle = GetRegion(regions, ModuleRegionType.Middle);
+                Rect middleInspect = GetMiddleInspectRect(middle, regionParameters.MiddleInspectHorizontalInsetRatio);
                 Rect leftSilver = GetRegion(regions, ModuleRegionType.LeftSilver);
                 Rect rightSilver = GetRegion(regions, ModuleRegionType.RightSilver);
                 ModuleRegionType[] edgeTypes =
@@ -491,61 +551,205 @@ namespace WindowsFormsApp1
                 };
 
                 var result = new ModuleInspectionResult { Regions = regions };
-                SilverDefectStats leftDefects = AnalyzeSilverDefects(gray, leftSilver);
-                SilverDefectStats rightDefects = AnalyzeSilverDefects(gray, rightSilver);
-                result.MiddleSilverRatio = MaskRatio(silverMask, middle);
+                SilverDefectStats leftDefects = AnalyzeSilverDefects(gray, leftSilver, regionParameters, inspectionParameters);
+                SilverDefectStats rightDefects = AnalyzeSilverDefects(gray, rightSilver, regionParameters, inspectionParameters);
+                System.Collections.Generic.List<DefectCandidate> leftEdgeDefects =
+                    FindEdgeMissingDefects(gray, leftSilver, inspectionParameters);
+                System.Collections.Generic.List<DefectCandidate> rightEdgeDefects =
+                    FindEdgeMissingDefects(gray, rightSilver, inspectionParameters);
+                System.Collections.Generic.List<DefectCandidate> leftLineDefects =
+                    FindLineDefects(gray, leftSilver, regionParameters, inspectionParameters);
+                System.Collections.Generic.List<DefectCandidate> rightLineDefects =
+                    FindLineDefects(gray, rightSilver, regionParameters, inspectionParameters);
+                FindPairedEdgeDefects(
+                    gray,
+                    leftSilver,
+                    rightSilver,
+                    inspectionParameters,
+                    out System.Collections.Generic.List<DefectCandidate> leftPairedEdgeDefects,
+                    out System.Collections.Generic.List<DefectCandidate> rightPairedEdgeDefects);
+                SplitSilverRectVertically(leftSilver, regionParameters.SilverVerticalSplitRatio, out Rect leftSilverTop, out Rect leftSilverBottom);
+                SplitSilverRectVertically(rightSilver, regionParameters.SilverVerticalSplitRatio, out Rect rightSilverTop, out Rect rightSilverBottom);
+                Rect middleErrorBox;
+                using (Mat middleSilverMask = CreateMiddleSilverMask(gray, middleInspect, inspectionParameters))
+                {
+                    result.MiddleSilverRatio = MaskRatio(middleSilverMask, middleInspect);
+                    middleErrorBox = FindLargestMaskBlobBox(middleSilverMask, middleInspect);
+                }
                 result.LeftSilverCoverage = MaskRatio(silverMask, leftSilver);
                 result.RightSilverCoverage = MaskRatio(silverMask, rightSilver);
+                result.LeftSilverTopCoverage = MaskRatio(silverMask, leftSilverTop);
+                result.LeftSilverBottomCoverage = MaskRatio(silverMask, leftSilverBottom);
+                result.RightSilverTopCoverage = MaskRatio(silverMask, rightSilverTop);
+                result.RightSilverBottomCoverage = MaskRatio(silverMask, rightSilverBottom);
                 result.LeftMaxMissingRatio = leftDefects.MissingRatio;
                 result.RightMaxMissingRatio = rightDefects.MissingRatio;
                 result.LeftInnerDefectRatio = leftDefects.InnerDefectRatio;
                 result.RightInnerDefectRatio = rightDefects.InnerDefectRatio;
-                CheckEdgeSilver(edgeSilverMask, edgeRects, edgeTypes, edgeNames, result);
+                result.LeftEdgeMissingRatio = MaximumRatio(leftEdgeDefects);
+                result.RightEdgeMissingRatio = MaximumRatio(rightEdgeDefects);
+                result.LeftPairedEdgeRatio = MaximumRatio(leftPairedEdgeDefects);
+                result.RightPairedEdgeRatio = MaximumRatio(rightPairedEdgeDefects);
+                result.LeftLineDefectRatio = MaximumRatio(leftLineDefects);
+                result.RightLineDefectRatio = MaximumRatio(rightLineDefects);
+                CheckEdgeSilver(edgeSilverMask, edgeRects, edgeTypes, edgeNames, result, regionParameters, inspectionParameters);
 
-                if (result.MiddleSilverRatio > MiddleSilverMaxRatio)
+                Rect moduleBox = regions.ModuleBox;
+                result.ModuleFullyVisible = IsModuleFullyVisible(
+                    gray,
+                    regionParameters.ModuleDarkThreshold,
+                    inspectionParameters.ModuleVisibleMargin,
+                    inspectionParameters.ModuleBorderDarkRatio);
+                if (!result.ModuleFullyVisible)
+                {
+                    result.Reasons.Add("module is not fully visible");
+                    AddErrorRegion(result, moduleBox, "module incomplete");
+                }
+
+                if (result.MiddleSilverRatio > inspectionParameters.MiddleSilverNgRatio)
                 {
                     result.Reasons.Add($"middle silver {result.MiddleSilverRatio:P1}");
-                    AddErrorRegion(result, middle, $"middle {result.MiddleSilverRatio:P1}");
+                    AddErrorRegion(result, middleErrorBox, $"middle {result.MiddleSilverRatio:P1}");
                 }
-                if (result.LeftSilverCoverage < SilverCoverageMinRatio)
+                else if (result.MiddleSilverRatio >= inspectionParameters.MiddleSilverReviewRatio)
                 {
-                    result.Reasons.Add($"L silver coverage low {result.LeftSilverCoverage:P1}");
-                    AddErrorRegion(result, leftSilver, $"L cover {result.LeftSilverCoverage:P1}");
+                    AddReviewReason(result,
+                        $"middle silver review {result.MiddleSilverRatio:P1}",
+                        middleErrorBox,
+                        $"middle review {result.MiddleSilverRatio:P1}");
                 }
-                if (result.RightSilverCoverage < SilverCoverageMinRatio)
-                {
-                    result.Reasons.Add($"R silver coverage low {result.RightSilverCoverage:P1}");
-                    AddErrorRegion(result, rightSilver, $"R cover {result.RightSilverCoverage:P1}");
-                }
-                if (result.LeftMaxMissingRatio > SilverMaxMissingBlobRatio)
+
+                CheckCoverageDecision(result, result.LeftSilverTopCoverage,
+                    inspectionParameters.SilverTopCoverageNgRatio,
+                    inspectionParameters.SilverCoverageOkRatio,
+                    leftSilverTop, "L silver top", "L top");
+                CheckCoverageDecision(result, result.LeftSilverBottomCoverage,
+                    inspectionParameters.SilverBottomCoverageNgRatio,
+                    inspectionParameters.SilverCoverageOkRatio,
+                    leftSilverBottom, "L silver bottom", "L bottom");
+                CheckCoverageDecision(result, result.RightSilverTopCoverage,
+                    inspectionParameters.SilverTopCoverageNgRatio,
+                    inspectionParameters.SilverCoverageOkRatio,
+                    rightSilverTop, "R silver top", "R top");
+                CheckCoverageDecision(result, result.RightSilverBottomCoverage,
+                    inspectionParameters.SilverBottomCoverageNgRatio,
+                    inspectionParameters.SilverCoverageOkRatio,
+                    rightSilverBottom, "R silver bottom", "R bottom");
+
+                if (result.LeftMaxMissingRatio > inspectionParameters.MissingSilverNgRatio)
                 {
                     result.Reasons.Add($"L silver missing {result.LeftMaxMissingRatio:P1}");
                     AddErrorRegion(result, leftDefects.MissingBox, $"L missing {result.LeftMaxMissingRatio:P1}");
                 }
-                if (result.RightMaxMissingRatio > SilverMaxMissingBlobRatio)
+                else if (result.LeftMaxMissingRatio >= inspectionParameters.MissingSilverReviewRatio)
+                {
+                    AddReviewReason(result,
+                        $"L silver missing review {result.LeftMaxMissingRatio:P1}",
+                        leftDefects.MissingBox,
+                        $"L missing review {result.LeftMaxMissingRatio:P1}");
+                }
+                if (result.RightMaxMissingRatio > inspectionParameters.MissingSilverNgRatio)
                 {
                     result.Reasons.Add($"R silver missing {result.RightMaxMissingRatio:P1}");
                     AddErrorRegion(result, rightDefects.MissingBox, $"R missing {result.RightMaxMissingRatio:P1}");
                 }
-                if (result.LeftInnerDefectRatio > SilverInnerDefectMaxRatio)
+                else if (result.RightMaxMissingRatio >= inspectionParameters.MissingSilverReviewRatio)
                 {
-                    result.Reasons.Add($"L silver defect {result.LeftInnerDefectRatio:P1}");
-                    AddErrorRegion(result, leftDefects.InnerDefectBox, $"L defect {result.LeftInnerDefectRatio:P1}");
+                    AddReviewReason(result,
+                        $"R silver missing review {result.RightMaxMissingRatio:P1}",
+                        rightDefects.MissingBox,
+                        $"R missing review {result.RightMaxMissingRatio:P1}");
                 }
-                if (result.RightInnerDefectRatio > SilverInnerDefectMaxRatio)
+                CheckInnerDefectDecisions(
+                    result, leftDefects.InnerDefects, "L", inspectionParameters);
+                CheckInnerDefectDecisions(
+                    result, rightDefects.InnerDefects, "R", inspectionParameters);
+                CheckDefectDecisions(
+                    result,
+                    leftEdgeDefects,
+                    "L edge missing",
+                    inspectionParameters.EdgeMissingReviewRatio,
+                    inspectionParameters.EdgeMissingNgRatio);
+                CheckDefectDecisions(
+                    result,
+                    rightEdgeDefects,
+                    "R edge missing",
+                    inspectionParameters.EdgeMissingReviewRatio,
+                    inspectionParameters.EdgeMissingNgRatio);
+                CheckDefectDecisions(
+                    result,
+                    leftLineDefects,
+                    "L dark line",
+                    inspectionParameters.LineDefectReviewRatio,
+                    inspectionParameters.LineDefectNgRatio);
+                CheckDefectDecisions(
+                    result,
+                    rightLineDefects,
+                    "R dark line",
+                    inspectionParameters.LineDefectReviewRatio,
+                    inspectionParameters.LineDefectNgRatio);
+
+                if (DefectReviewClassifier.TryPredictRuntime(source, out bool classifierReview) &&
+                    classifierReview)
                 {
-                    result.Reasons.Add($"R silver defect {result.RightInnerDefectRatio:P1}");
-                    AddErrorRegion(result, rightDefects.InnerDefectBox, $"R defect {result.RightInnerDefectRatio:P1}");
+                    DefectCandidate classifierCandidate = SelectLargestCandidate(
+                        leftDefects.InnerDefects,
+                        rightDefects.InnerDefects,
+                        leftEdgeDefects,
+                        rightEdgeDefects,
+                        leftPairedEdgeDefects,
+                        rightPairedEdgeDefects,
+                        leftLineDefects,
+                        rightLineDefects);
+                    if (classifierCandidate != null)
+                    {
+                        AddReviewReason(
+                            result,
+                            "appearance classifier review",
+                            classifierCandidate.Box,
+                            "appearance review");
+                    }
+                    else
+                    {
+                        result.ReviewReasons.Add("appearance classifier review");
+                    }
                 }
 
-                result.IsOk = result.Reasons.Count == 0;
+                result.Decision = result.Reasons.Count > 0
+                    ? ModuleInspectionDecision.Ng
+                    : result.ReviewReasons.Count > 0
+                        ? ModuleInspectionDecision.Review
+                        : ModuleInspectionDecision.Ok;
+                result.IsOk = result.Decision == ModuleInspectionDecision.Ok;
                 result.AnnotatedImage = DrawInspection(source, result);
                 result.ErrorImage = DrawErrorInspection(source, result);
                 return result;
             }
         }
 
-        private static Mat CreateSilverMask(Mat bgr)
+        private static Mat CreateMiddleSilverMask(
+            Mat gray,
+            Rect inspectRect,
+            InspectionParameters parameters)
+        {
+            using (Mat blur = new Mat())
+            using (Mat bright = new Mat())
+            using (Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(3, 3)))
+            {
+                byte median = RegionPercentile(gray, inspectRect, 0.50, 100);
+                double threshold = Clamp(
+                    median + parameters.MiddleSilverThresholdOffset,
+                    parameters.MiddleSilverThresholdMinimum,
+                    parameters.MiddleSilverThresholdMaximum);
+                Cv2.GaussianBlur(gray, blur, new OpenCvSharp.Size(3, 3), 0);
+                Cv2.Threshold(blur, bright, threshold, 255, ThresholdTypes.Binary);
+                Cv2.MorphologyEx(bright, bright, MorphTypes.Close, kernel, iterations: 1);
+                Cv2.MorphologyEx(bright, bright, MorphTypes.Open, kernel, iterations: 1);
+                return bright.Clone();
+            }
+        }
+
+        private static Mat CreateSilverMask(Mat bgr, int grayThreshold)
         {
             using (Mat gray = new Mat())
             using (Mat bright = new Mat())
@@ -553,14 +757,19 @@ namespace WindowsFormsApp1
             {
                 Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
                 Cv2.GaussianBlur(gray, gray, new OpenCvSharp.Size(3, 3), 0);
-                Cv2.Threshold(gray, bright, 145, 255, ThresholdTypes.Binary);
+
+                // 原来这里固定写死 145，现在改为传入 grayThreshold
+                Cv2.Threshold(gray, bright, grayThreshold, 255, ThresholdTypes.Binary);
+
                 Cv2.MorphologyEx(bright, bright, MorphTypes.Close, kernel, iterations: 1);
                 Cv2.MorphologyEx(bright, bright, MorphTypes.Open, kernel, iterations: 1);
+
                 return bright.Clone();
             }
         }
 
-        private static Mat CreateEdgeSilverMask(Mat bgr)
+
+        private static Mat CreateEdgeSilverMask(Mat bgr, int grayThreshold)
         {
             using (Mat gray = new Mat())
             using (Mat strictSilver = new Mat())
@@ -568,7 +777,7 @@ namespace WindowsFormsApp1
             {
                 Cv2.CvtColor(bgr, gray, ColorConversionCodes.BGR2GRAY);
                 Cv2.GaussianBlur(gray, gray, new OpenCvSharp.Size(3, 3), 0);
-                Cv2.Threshold(gray, strictSilver, 225, 255, ThresholdTypes.Binary);
+                Cv2.Threshold(gray, strictSilver, grayThreshold, 255, ThresholdTypes.Binary);
                 Cv2.MorphologyEx(strictSilver, strictSilver, MorphTypes.Open, kernel, iterations: 1);
                 return strictSilver.Clone();
             }
@@ -577,49 +786,201 @@ namespace WindowsFormsApp1
         private static Mat DrawInspection(Mat source, ModuleInspectionResult result)
         {
             Mat output = ModuleRegionLocator.DrawRegions(source, result.Regions);
-            Scalar color = result.IsOk ? Scalar.LimeGreen : Scalar.Red;
-            string text = result.IsOk ? "OK" : "NG";
-            Cv2.PutText(output, text, new OpenCvSharp.Point(20, 45),
-                HersheyFonts.HersheySimplex, 1.4, color, 3);
-            if (!result.IsOk)
-            {
-                Cv2.PutText(output, result.Reasons[0], new OpenCvSharp.Point(20, 82),
-                    HersheyFonts.HersheySimplex, 0.55, color, 2);
-            }
+            DrawCoverageOverlay(output, result);
             return output;
         }
 
         private static Mat DrawErrorInspection(Mat source, ModuleInspectionResult result)
         {
             Mat output = ModuleRegionLocator.DrawRegions(source, result.Regions);
-            Scalar color = result.IsOk ? Scalar.LimeGreen : Scalar.Red;
-            Cv2.PutText(output, result.IsOk ? "OK" : "NG", new OpenCvSharp.Point(20, 45),
-                HersheyFonts.HersheySimplex, 1.4, color, 3);
+            DrawCoverageOverlay(output, result);
 
             if (result.ErrorRegions.Count == 0)
-            {
-                Cv2.PutText(output, result.IsOk ? "no error" : result.ReasonText,
-                    new OpenCvSharp.Point(20, 82), HersheyFonts.HersheySimplex, 0.55, color, 2);
                 return output;
-            }
 
             foreach (ModuleErrorRegion error in result.ErrorRegions)
             {
                 Rect box = ClampRectToImage(error.Box, output.Width, output.Height);
-                Cv2.Rectangle(output, box, Scalar.Red, 4);
+                Scalar color = error.IsReview ? new Scalar(0, 165, 255) : Scalar.Red;
+                Cv2.Rectangle(output, box, color, 4);
                 Cv2.PutText(output, error.Label ?? "error",
                     new OpenCvSharp.Point(box.X + 3, Math.Max(18, box.Y - 6)),
-                    HersheyFonts.HersheySimplex, 0.62, Scalar.Red, 2);
+                    HersheyFonts.HersheySimplex, 0.62, color, 2);
             }
 
             return output;
+        }
+
+        private static void DrawCoverageOverlay(Mat output, ModuleInspectionResult result)
+        {
+            Rect leftSilver = GetRegion(result.Regions, ModuleRegionType.LeftSilver);
+            Rect rightSilver = GetRegion(result.Regions, ModuleRegionType.RightSilver);
+            DrawCoverageText(output, leftSilver,
+                $"L cover {result.LeftSilverCoverage:P0}",
+                $"L top {result.LeftSilverTopCoverage:P0}",
+                $"L bottom {result.LeftSilverBottomCoverage:P0}");
+            DrawCoverageText(output, rightSilver,
+                $"R cover {result.RightSilverCoverage:P0}",
+                $"R top {result.RightSilverTopCoverage:P0}",
+                $"R bottom {result.RightSilverBottomCoverage:P0}");
+        }
+
+        private static void DrawCoverageText(Mat output, Rect rect, string coverText, string topText, string bottomText)
+        {
+            int x = rect.X + 4;
+            int y = rect.Y + 18;
+            Cv2.PutText(output, coverText, new OpenCvSharp.Point(x, y),
+                HersheyFonts.HersheySimplex, 0.38, Scalar.Yellow, 1);
+            Cv2.PutText(output, topText, new OpenCvSharp.Point(x, y + 16),
+                HersheyFonts.HersheySimplex, 0.38, Scalar.Yellow, 1);
+            Cv2.PutText(output, bottomText, new OpenCvSharp.Point(x, y + 32),
+                HersheyFonts.HersheySimplex, 0.38, Scalar.Yellow, 1);
         }
 
         private static void AddErrorRegion(ModuleInspectionResult result, Rect box, string label)
         {
             if (box.Width <= 0 || box.Height <= 0)
                 return;
-            result.ErrorRegions.Add(new ModuleErrorRegion { Box = box, Label = label });
+            AddOrMergeErrorRegion(result, box, label, false);
+        }
+
+        private static void AddReviewReason(ModuleInspectionResult result, string reason, Rect box, string label)
+        {
+            result.ReviewReasons.Add(reason);
+            if (box.Width <= 0 || box.Height <= 0)
+                return;
+            AddOrMergeErrorRegion(result, box, label, true);
+        }
+
+        private static void AddOrMergeErrorRegion(
+            ModuleInspectionResult result,
+            Rect box,
+            string label,
+            bool isReview)
+        {
+            int boxArea = Math.Max(1, box.Width * box.Height);
+            foreach (ModuleErrorRegion existing in result.ErrorRegions)
+            {
+                Rect overlap = Intersect(existing.Box, box);
+                if (overlap.Width <= 0 || overlap.Height <= 0)
+                    continue;
+
+                int existingArea = Math.Max(1, existing.Box.Width * existing.Box.Height);
+                int overlapArea = overlap.Width * overlap.Height;
+                double areaScale = Math.Max(existingArea, boxArea) /
+                    (double)Math.Min(existingArea, boxArea);
+                double overlapOfSmaller = overlapArea /
+                    (double)Math.Min(existingArea, boxArea);
+                if (areaScale > 4.0 || overlapOfSmaller < 0.55)
+                    continue;
+
+                existing.Box = Union(existing.Box, box);
+                existing.Label = label;
+                existing.IsReview = existing.IsReview && isReview;
+                return;
+            }
+
+            result.ErrorRegions.Add(new ModuleErrorRegion
+            {
+                Box = box,
+                Label = label,
+                IsReview = isReview
+            });
+        }
+
+        private static void CheckInnerDefectDecisions(
+            ModuleInspectionResult result,
+            System.Collections.Generic.IEnumerable<DefectCandidate> defects,
+            string side,
+            InspectionParameters parameters)
+        {
+            foreach (DefectCandidate defect in defects)
+            {
+                if (defect.Ratio > parameters.InnerDefectNgRatio)
+                {
+                    result.Reasons.Add($"{side} silver defect {defect.Ratio:P2}");
+                    AddErrorRegion(result, defect.Box, $"{side} defect {defect.Ratio:P2}");
+                }
+                else if (defect.Ratio >= parameters.InnerDefectReviewRatio)
+                {
+                    AddReviewReason(
+                        result,
+                        $"{side} silver defect review {defect.Ratio:P2}",
+                        defect.Box,
+                        $"{side} defect review {defect.Ratio:P2}");
+                }
+            }
+        }
+
+        private static void CheckDefectDecisions(
+            ModuleInspectionResult result,
+            System.Collections.Generic.IEnumerable<DefectCandidate> defects,
+            string name,
+            double reviewRatio,
+            double ngRatio)
+        {
+            foreach (DefectCandidate defect in defects)
+            {
+                if (defect.Ratio > ngRatio)
+                {
+                    result.Reasons.Add($"{name} {defect.Ratio:P2}");
+                    AddErrorRegion(result, defect.Box, $"{name} {defect.Ratio:P2}");
+                }
+                else if (defect.Ratio >= reviewRatio)
+                {
+                    AddReviewReason(
+                        result,
+                        $"{name} review {defect.Ratio:P2}",
+                        defect.Box,
+                        $"{name} review {defect.Ratio:P2}");
+                }
+            }
+        }
+
+        private static double MaximumRatio(
+            System.Collections.Generic.IList<DefectCandidate> defects)
+        {
+            return defects == null || defects.Count == 0 ? 0 : defects[0].Ratio;
+        }
+
+        private static DefectCandidate SelectLargestCandidate(
+            params System.Collections.Generic.IList<DefectCandidate>[] groups)
+        {
+            DefectCandidate best = null;
+            foreach (System.Collections.Generic.IList<DefectCandidate> group in groups)
+            {
+                if (group == null)
+                    continue;
+                foreach (DefectCandidate candidate in group)
+                {
+                    if (best == null || candidate.Ratio > best.Ratio)
+                        best = candidate;
+                }
+            }
+            return best;
+        }
+
+        private static void CheckCoverageDecision(
+            ModuleInspectionResult result,
+            double coverage,
+            double ngMinimum,
+            double okMinimum,
+            Rect box,
+            string reasonName,
+            string labelName)
+        {
+            if (coverage < ngMinimum)
+            {
+                result.Reasons.Add($"{reasonName} coverage low {coverage:P1}");
+                AddErrorRegion(result, box, $"{labelName} {coverage:P1}");
+            }
+            else if (coverage < okMinimum)
+            {
+                AddReviewReason(result,
+                    $"{reasonName} coverage review {coverage:P1}",
+                    box,
+                    $"{labelName} review {coverage:P1}");
+            }
         }
 
         private static Rect ClampRectToImage(Rect rect, int width, int height)
@@ -639,6 +1000,13 @@ namespace WindowsFormsApp1
             throw new InvalidOperationException("region not found: " + type);
         }
 
+        private static Rect GetMiddleInspectRect(Rect middle, double insetRatio)
+        {
+            int inset = Math.Max(1, (int)Math.Round(middle.Width * insetRatio));
+            int width = Math.Max(1, middle.Width - inset * 2);
+            return new Rect(middle.X + inset, middle.Y, width, middle.Height);
+        }
+
         private static double MaskRatio(Mat mask, Rect rect)
         {
             using (Mat roi = new Mat(mask, rect))
@@ -649,35 +1017,96 @@ namespace WindowsFormsApp1
             }
         }
 
+        private static Rect FindLargestMaskBlobBox(Mat mask, Rect searchRect)
+        {
+            using (Mat roi = new Mat(mask, searchRect))
+            using (Mat labels = new Mat())
+            using (Mat stats = new Mat())
+            using (Mat centroids = new Mat())
+            {
+                int count = Cv2.ConnectedComponentsWithStats(roi, labels, stats, centroids);
+                int maxArea = 0;
+                Rect maxBox = searchRect;
+                for (int i = 1; i < count; i++)
+                {
+                    int area = stats.At<int>(i, (int)ConnectedComponentsTypes.Area);
+                    if (area <= maxArea)
+                        continue;
+
+                    int x = stats.At<int>(i, (int)ConnectedComponentsTypes.Left);
+                    int y = stats.At<int>(i, (int)ConnectedComponentsTypes.Top);
+                    int width = stats.At<int>(i, (int)ConnectedComponentsTypes.Width);
+                    int height = stats.At<int>(i, (int)ConnectedComponentsTypes.Height);
+                    maxArea = area;
+                    maxBox = new Rect(searchRect.X + x, searchRect.Y + y, width, height);
+                }
+
+                return maxBox;
+            }
+        }
+
+        private static void SplitSilverRectVertically(Rect silverRect, double splitRatio, out Rect topRect, out Rect bottomRect)
+        {
+            splitRatio = Math.Max(0.10, Math.Min(0.90, splitRatio));
+
+            int topHeight = Math.Max(1, (int)Math.Round(silverRect.Height * splitRatio));
+            int bottomHeight = Math.Max(1, silverRect.Height - topHeight);
+
+            if (topHeight + bottomHeight > silverRect.Height)
+                bottomHeight = Math.Max(1, silverRect.Height - topHeight);
+
+            topRect = new Rect(
+                silverRect.X,
+                silverRect.Y,
+                silverRect.Width,
+                topHeight);
+
+            bottomRect = new Rect(
+                silverRect.X,
+                silverRect.Y + topHeight,
+                silverRect.Width,
+                bottomHeight);
+        }
+
         private static void CheckEdgeSilver(
             Mat mask,
             Rect[] rects,
             ModuleRegionType[] types,
             string[] names,
-            ModuleInspectionResult result)
+            ModuleInspectionResult result,
+            RegionParameters regionParameters,
+            InspectionParameters inspectionParameters)
         {
             result.EdgeSilverRatio = 0;
             result.EdgeSilverRegion = string.Empty;
             for (int i = 0; i < rects.Length; i++)
             {
-                Rect inspectRect = GetEdgeInspectRect(rects[i], types[i]);
+                Rect inspectRect = GetEdgeInspectRect(
+                    rects[i], types[i], regionParameters.EdgeInspectTrimRatio);
                 double ratio = MaskRatio(mask, inspectRect);
                 if (ratio > result.EdgeSilverRatio)
                 {
                     result.EdgeSilverRatio = ratio;
                     result.EdgeSilverRegion = names[i];
                 }
-                if (ratio > EdgeSilverMaxRatio)
+                if (ratio > inspectionParameters.EdgeSilverNgRatio)
                 {
                     result.Reasons.Add($"{names[i]} silver {ratio:P1}");
                     AddErrorRegion(result, inspectRect, $"{names[i]} {ratio:P1}");
                 }
+                else if (ratio >= inspectionParameters.EdgeSilverReviewRatio)
+                {
+                    AddReviewReason(result,
+                        $"{names[i]} silver review {ratio:P1}",
+                        inspectRect,
+                        $"{names[i]} review {ratio:P1}");
+                }
             }
         }
 
-        private static Rect GetEdgeInspectRect(Rect rect, ModuleRegionType type)
+        private static Rect GetEdgeInspectRect(Rect rect, ModuleRegionType type, double trimRatio)
         {
-            int trim = Math.Max(2, (int)Math.Round(Math.Min(rect.Width, rect.Height) * 0.18));
+            int trim = Math.Max(2, (int)Math.Round(Math.Min(rect.Width, rect.Height) * trimRatio));
             switch (type)
             {
                 case ModuleRegionType.LeftSilverTopEdge:
@@ -701,19 +1130,32 @@ namespace WindowsFormsApp1
             public double InnerDefectRatio { get; set; }
             public Rect MissingBox { get; set; }
             public Rect InnerDefectBox { get; set; }
+            public System.Collections.Generic.List<DefectCandidate> InnerDefects { get; set; }
         }
 
-        private static SilverDefectStats AnalyzeSilverDefects(Mat gray, Rect rect)
+        private static SilverDefectStats AnalyzeSilverDefects(
+            Mat gray,
+            Rect rect,
+            RegionParameters regionParameters,
+            InspectionParameters inspectionParameters)
         {
-            Rect inner = ShrinkRect(rect, 0.08, 0.06);
-            DefectCandidate missing = FindMissingBlob(gray, rect, inner);
-            DefectCandidate innerDefect = FindLocalDarkDefect(gray, inner);
+            Rect inner = ShrinkRect(
+                rect,
+                regionParameters.SilverInnerHorizontalInsetRatio,
+                regionParameters.SilverInnerVerticalInsetRatio);
+            DefectCandidate missing = FindMissingBlob(gray, rect, inner, inspectionParameters);
+            System.Collections.Generic.List<DefectCandidate> innerDefects =
+                FindLocalDarkDefects(gray, inner, inspectionParameters);
+            DefectCandidate innerDefect = innerDefects.Count > 0
+                ? innerDefects[0]
+                : new DefectCandidate();
             return new SilverDefectStats
             {
                 MissingRatio = missing.Ratio,
                 InnerDefectRatio = innerDefect.Ratio,
                 MissingBox = missing.Box,
-                InnerDefectBox = innerDefect.Box
+                InnerDefectBox = innerDefect.Box,
+                InnerDefects = innerDefects
             };
         }
 
@@ -723,20 +1165,24 @@ namespace WindowsFormsApp1
             public Rect Box { get; set; }
         }
 
-        private static DefectCandidate FindMissingBlob(Mat gray, Rect silverRect, Rect inspectRect)
+        private static DefectCandidate FindMissingBlob(
+            Mat gray,
+            Rect silverRect,
+            Rect inspectRect,
+            InspectionParameters parameters)
         {
             using (Mat roi = new Mat(gray, inspectRect))
             using (Mat dark = new Mat())
             using (Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(5, 5)))
             {
-                Cv2.Threshold(roi, dark, 95, 255, ThresholdTypes.BinaryInv);
+                Cv2.Threshold(roi, dark, parameters.MissingDarkThreshold, 255, ThresholdTypes.BinaryInv);
                 Cv2.MorphologyEx(dark, dark, MorphTypes.Close, kernel, iterations: 1);
                 using (Mat labels = new Mat())
                 using (Mat stats = new Mat())
                 using (Mat centroids = new Mat())
                 {
                     int count = Cv2.ConnectedComponentsWithStats(dark, labels, stats, centroids);
-                    int maxScoreArea = 0;
+                    int maxArea = 0;
                     Rect maxBox = Rect.Empty;
                     for (int i = 1; i < count; i++)
                     {
@@ -745,46 +1191,75 @@ namespace WindowsFormsApp1
                         int y = stats.At<int>(i, (int)ConnectedComponentsTypes.Top);
                         int width = stats.At<int>(i, (int)ConnectedComponentsTypes.Width);
                         int height = stats.At<int>(i, (int)ConnectedComponentsTypes.Height);
-                        int boxArea = width * height;
-                        int scoreArea = Math.Max(area, boxArea);
-                        if (scoreArea > maxScoreArea)
+
+                        int margin = parameters.MissingBoundaryMargin;
+                        bool touchesOutside = x <= margin ||
+                            y <= margin ||
+                            x + width >= inspectRect.Width - margin ||
+                            y + height >= inspectRect.Height - margin;
+                        if (touchesOutside)
+                            continue;
+
+                        if (area > maxArea)
                         {
-                            maxScoreArea = scoreArea;
+                            maxArea = area;
                             maxBox = new Rect(inspectRect.X + x, inspectRect.Y + y, width, height);
                         }
                     }
                     double ratio = silverRect.Width <= 0 || silverRect.Height <= 0
                         ? 0
-                        : maxScoreArea / (double)(silverRect.Width * silverRect.Height);
+                        : maxArea / (double)(silverRect.Width * silverRect.Height);
                     return new DefectCandidate { Ratio = ratio, Box = maxBox };
                 }
             }
         }
 
-        private static DefectCandidate FindLocalDarkDefect(Mat gray, Rect inner)
+        private static System.Collections.Generic.List<DefectCandidate> FindLocalDarkDefects(
+            Mat gray,
+            Rect inner,
+            InspectionParameters parameters)
         {
+            var defects = new System.Collections.Generic.List<DefectCandidate>();
+            int backgroundKernelSize = FitOddKernel(
+                parameters.DefectBackgroundKernelSize,
+                Math.Min(inner.Width, inner.Height));
+            int morphKernelSize = FitOddKernel(
+                parameters.DefectMorphKernelSize,
+                Math.Min(inner.Width, inner.Height));
+
             using (Mat roi = new Mat(gray, inner))
             using (Mat blur = new Mat())
-            using (Mat background = new Mat())
-            using (Mat localDiff = new Mat())
-            using (Mat localDark = new Mat())
-            using (Mat absoluteDark = new Mat())
-            using (Mat semiDark = new Mat())
+            using (Mat blackHat = new Mat())
+            using (Mat strongDark = new Mat())
+            using (Mat localContrast = new Mat())
             using (Mat candidate = new Mat())
-            using (Mat localCandidate = new Mat())
-            using (Mat kernel = Cv2.GetStructuringElement(MorphShapes.Rect, new OpenCvSharp.Size(3, 3)))
+            using (Mat backgroundKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(backgroundKernelSize, backgroundKernelSize)))
+            using (Mat morphKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(morphKernelSize, morphKernelSize)))
             {
                 Cv2.GaussianBlur(roi, blur, new OpenCvSharp.Size(3, 3), 0);
-                int backgroundKernel = MakeOdd(Math.Max(21, Math.Min(61, Math.Min(inner.Width, inner.Height) / 5)));
-                Cv2.GaussianBlur(blur, background, new OpenCvSharp.Size(backgroundKernel, backgroundKernel), 0);
-                Cv2.Subtract(background, blur, localDiff);
-                Cv2.Threshold(localDiff, localDark, 30, 255, ThresholdTypes.Binary);
-                Cv2.Threshold(blur, absoluteDark, 115, 255, ThresholdTypes.BinaryInv);
-                Cv2.Threshold(blur, semiDark, 150, 255, ThresholdTypes.BinaryInv);
-                Cv2.BitwiseAnd(localDark, semiDark, localCandidate);
-                Cv2.BitwiseOr(absoluteDark, localCandidate, candidate);
-                Cv2.MorphologyEx(candidate, candidate, MorphTypes.Close, kernel, iterations: 1);
-                Cv2.MorphologyEx(candidate, candidate, MorphTypes.Open, kernel, iterations: 1);
+
+                // Black Hat = 闭运算结果 - 原图，直接突出亮银面中的局部暗孔。
+                Cv2.MorphologyEx(blur, blackHat, MorphTypes.BlackHat, backgroundKernel);
+                Cv2.Threshold(
+                    blur,
+                    strongDark,
+                    parameters.StrongDarkGrayThreshold,
+                    255,
+                    ThresholdTypes.BinaryInv);
+                Cv2.Threshold(
+                    blackHat,
+                    localContrast,
+                    parameters.LocalContrastThreshold,
+                    255,
+                    ThresholdTypes.Binary);
+                Cv2.BitwiseAnd(strongDark, localContrast, candidate);
+
+                Cv2.MorphologyEx(candidate, candidate, MorphTypes.Close, morphKernel, iterations: 1);
+                Cv2.MorphologyEx(candidate, candidate, MorphTypes.Open, morphKernel, iterations: 1);
 
                 using (Mat labels = new Mat())
                 using (Mat stats = new Mat())
@@ -792,9 +1267,11 @@ namespace WindowsFormsApp1
                 {
                     int count = Cv2.ConnectedComponentsWithStats(candidate, labels, stats, centroids);
                     int innerArea = Math.Max(1, inner.Width * inner.Height);
-                    int minArea = Math.Max(18, (int)Math.Round(innerArea * 0.00035));
-                    int maxScoreArea = 0;
-                    Rect maxBox = Rect.Empty;
+                    int minimumArea = Math.Max(
+                        parameters.MinimumDefectArea,
+                        (int)Math.Round(innerArea * parameters.MinimumDefectAreaRatio));
+                    int boundaryMargin = Math.Max(2, morphKernelSize);
+
                     for (int i = 1; i < count; i++)
                     {
                         int area = stats.At<int>(i, (int)ConnectedComponentsTypes.Area);
@@ -802,36 +1279,625 @@ namespace WindowsFormsApp1
                         int y = stats.At<int>(i, (int)ConnectedComponentsTypes.Top);
                         int width = stats.At<int>(i, (int)ConnectedComponentsTypes.Width);
                         int height = stats.At<int>(i, (int)ConnectedComponentsTypes.Height);
-                        if (area < minArea || width < 5 || height < 5)
-                            continue;
-                        if (IsNearSilverInnerBorder(x, y, width, height, inner.Width, inner.Height))
+
+                        if (area < minimumArea ||
+                            width < parameters.MinimumDefectWidth ||
+                            height < parameters.MinimumDefectHeight)
                             continue;
 
-                        int boxArea = width * height;
-                        int scoreArea = Math.Max(area, (int)Math.Round(boxArea * 0.65));
-                        if (scoreArea > maxScoreArea)
+                        if (x <= boundaryMargin || y <= boundaryMargin ||
+                            x + width >= inner.Width - boundaryMargin ||
+                            y + height >= inner.Height - boundaryMargin)
+                            continue;
+
+                        int boxArea = Math.Max(1, width * height);
+                        double fillRatio = area / (double)boxArea;
+                        double aspectRatio = width / (double)height;
+                        if (fillRatio < parameters.MinimumDefectFillRatio ||
+                            aspectRatio < parameters.MinimumDefectAspectRatio ||
+                            aspectRatio > parameters.MaximumDefectAspectRatio)
+                            continue;
+
+                        Rect coreBox = new Rect(inner.X + x, inner.Y + y, width, height);
+                        Rect displayBox = ExpandDefectRect(
+                            coreBox,
+                            parameters.DefectBoxPadding,
+                            parameters.DefectBoxMinimumWidth,
+                            parameters.DefectBoxMinimumHeight,
+                            gray.Width,
+                            gray.Height);
+                        defects.Add(new DefectCandidate
                         {
-                            maxScoreArea = scoreArea;
-                            maxBox = new Rect(inner.X + x, inner.Y + y, width, height);
-                        }
+                            Ratio = area / (double)innerArea,
+                            Box = displayBox
+                        });
                     }
-                    return new DefectCandidate
+                }
+            }
+
+            defects.Sort((left, right) => right.Ratio.CompareTo(left.Ratio));
+            if (defects.Count > parameters.MaximumDefectsPerSilverRegion)
+            {
+                defects.RemoveRange(
+                    parameters.MaximumDefectsPerSilverRegion,
+                    defects.Count - parameters.MaximumDefectsPerSilverRegion);
+            }
+            return defects;
+        }
+
+        private static System.Collections.Generic.List<DefectCandidate> FindEdgeMissingDefects(
+            Mat gray,
+            Rect silverRect,
+            InspectionParameters parameters)
+        {
+            var defects = new System.Collections.Generic.List<DefectCandidate>();
+            int closeSize = FitOddKernel(
+                parameters.EdgeMaskCloseKernelSize,
+                Math.Min(silverRect.Width, silverRect.Height));
+            int bandKernelSize = FitOddKernel(
+                parameters.EdgeBandDepth * 2 + 1,
+                Math.Min(silverRect.Width, silverRect.Height));
+            int contactKernelSize = FitOddKernel(
+                parameters.EdgeBoundaryContactDepth * 2 + 1,
+                Math.Min(silverRect.Width, silverRect.Height));
+
+            using (Mat roi = new Mat(gray, silverRect))
+            using (Mat blur = new Mat())
+            using (Mat actual = new Mat())
+            using (Mat contourInput = new Mat())
+            using (Mat expected = Mat.Zeros(roi.Size(), MatType.CV_8UC1))
+            using (Mat erodedExpected = new Mat())
+            using (Mat edgeBand = new Mat())
+            using (Mat contactCore = new Mat())
+            using (Mat contactBand = new Mat())
+            using (Mat notActual = new Mat())
+            using (Mat missing = new Mat())
+            using (Mat closeKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(closeSize, closeSize)))
+            using (Mat cleanKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(3, 3)))
+            using (Mat bandKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(bandKernelSize, bandKernelSize)))
+            using (Mat contactKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(contactKernelSize, contactKernelSize)))
+            {
+                Cv2.GaussianBlur(roi, blur, new OpenCvSharp.Size(3, 3), 0);
+                Cv2.Threshold(
+                    blur,
+                    actual,
+                    parameters.EdgeMaskGrayThreshold,
+                    255,
+                    ThresholdTypes.Binary);
+                Cv2.MorphologyEx(actual, actual, MorphTypes.Close, closeKernel, iterations: 1);
+                Cv2.MorphologyEx(actual, actual, MorphTypes.Open, cleanKernel, iterations: 1);
+
+                actual.CopyTo(contourInput);
+                Cv2.FindContours(
+                    contourInput,
+                    out OpenCvSharp.Point[][] contours,
+                    out HierarchyIndex[] hierarchy,
+                    RetrievalModes.External,
+                    ContourApproximationModes.ApproxSimple);
+                if (contours == null || contours.Length == 0)
+                    return defects;
+
+                int largestIndex = 0;
+                double largestArea = 0;
+                for (int i = 0; i < contours.Length; i++)
+                {
+                    double area = Cv2.ContourArea(contours[i]);
+                    if (area > largestArea)
                     {
-                        Ratio = maxScoreArea / (double)innerArea,
-                        Box = maxBox
-                    };
+                        largestArea = area;
+                        largestIndex = i;
+                    }
+                }
+                if (largestArea <= 0)
+                    return defects;
+
+                OpenCvSharp.Point[] hull = Cv2.ConvexHull(contours[largestIndex]);
+                Cv2.FillConvexPoly(expected, hull, Scalar.White);
+
+                Cv2.Erode(expected, erodedExpected, bandKernel, iterations: 1);
+                Cv2.Subtract(expected, erodedExpected, edgeBand);
+                Cv2.Erode(expected, contactCore, contactKernel, iterations: 1);
+                Cv2.Subtract(expected, contactCore, contactBand);
+                Cv2.BitwiseNot(actual, notActual);
+                Cv2.BitwiseAnd(notActual, edgeBand, missing);
+                Cv2.MorphologyEx(missing, missing, MorphTypes.Close, cleanKernel, iterations: 1);
+                Cv2.MorphologyEx(missing, missing, MorphTypes.Open, cleanKernel, iterations: 1);
+
+                using (Mat labels = new Mat())
+                using (Mat stats = new Mat())
+                using (Mat centroids = new Mat())
+                {
+                    int count = Cv2.ConnectedComponentsWithStats(missing, labels, stats, centroids);
+                    int silverArea = Math.Max(1, silverRect.Width * silverRect.Height);
+                    for (int i = 1; i < count; i++)
+                    {
+                        int area = stats.At<int>(i, (int)ConnectedComponentsTypes.Area);
+                        int x = stats.At<int>(i, (int)ConnectedComponentsTypes.Left);
+                        int y = stats.At<int>(i, (int)ConnectedComponentsTypes.Top);
+                        int width = stats.At<int>(i, (int)ConnectedComponentsTypes.Width);
+                        int height = stats.At<int>(i, (int)ConnectedComponentsTypes.Height);
+                        if (area < parameters.EdgeMinimumDefectArea ||
+                            width < parameters.EdgeMinimumDefectWidth ||
+                            height < parameters.EdgeMinimumDefectHeight)
+                            continue;
+
+                        double fillRatio = area / (double)Math.Max(1, width * height);
+                        if (fillRatio < parameters.EdgeMinimumDefectFillRatio)
+                            continue;
+
+                        bool touchesBoundary = false;
+                        for (int row = y; row < y + height && !touchesBoundary; row++)
+                        for (int column = x; column < x + width; column++)
+                        {
+                            if (labels.At<int>(row, column) == i &&
+                                contactBand.At<byte>(row, column) != 0)
+                            {
+                                touchesBoundary = true;
+                                break;
+                            }
+                        }
+                        if (!touchesBoundary)
+                            continue;
+
+                        Rect coreBox = new Rect(
+                            silverRect.X + x,
+                            silverRect.Y + y,
+                            width,
+                            height);
+                        defects.Add(new DefectCandidate
+                        {
+                            Ratio = area / (double)silverArea,
+                            Box = ExpandRect(
+                                coreBox,
+                                parameters.EdgeBoxPadding,
+                                gray.Width,
+                                gray.Height)
+                        });
+                    }
+                }
+            }
+
+            defects.Sort((left, right) => right.Ratio.CompareTo(left.Ratio));
+            if (defects.Count > parameters.MaximumEdgeDefectsPerSilverRegion)
+            {
+                defects.RemoveRange(
+                    parameters.MaximumEdgeDefectsPerSilverRegion,
+                    defects.Count - parameters.MaximumEdgeDefectsPerSilverRegion);
+            }
+            return defects;
+        }
+
+        private static void FindPairedEdgeDefects(
+            Mat gray,
+            Rect leftRect,
+            Rect rightRect,
+            InspectionParameters parameters,
+            out System.Collections.Generic.List<DefectCandidate> leftDefects,
+            out System.Collections.Generic.List<DefectCandidate> rightDefects)
+        {
+            leftDefects = new System.Collections.Generic.List<DefectCandidate>();
+            rightDefects = new System.Collections.Generic.List<DefectCandidate>();
+
+            using (Mat leftShape = CreateSilverShapeMask(gray, leftRect, parameters))
+            using (Mat rightShapeRaw = CreateSilverShapeMask(gray, rightRect, parameters))
+            using (Mat rightShape = new Mat())
+            using (Mat expected = new Mat())
+            using (Mat notLeft = new Mat())
+            using (Mat notRight = new Mat())
+            using (Mat leftMissing = new Mat())
+            using (Mat rightMissing = new Mat())
+            using (Mat cleanKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(3, 3)))
+            {
+                if (rightShapeRaw.Size() == leftShape.Size())
+                    Cv2.Flip(rightShapeRaw, rightShape, FlipMode.Y);
+                else
+                {
+                    using (Mat resized = new Mat())
+                    {
+                        Cv2.Resize(rightShapeRaw, resized, leftShape.Size(), 0, 0, InterpolationFlags.Nearest);
+                        Cv2.Flip(resized, rightShape, FlipMode.Y);
+                    }
+                }
+
+                Cv2.BitwiseOr(leftShape, rightShape, expected);
+                Cv2.BitwiseNot(leftShape, notLeft);
+                Cv2.BitwiseNot(rightShape, notRight);
+                Cv2.BitwiseAnd(expected, notLeft, leftMissing);
+                Cv2.BitwiseAnd(expected, notRight, rightMissing);
+                Cv2.MorphologyEx(leftMissing, leftMissing, MorphTypes.Open, cleanKernel, iterations: 1);
+                Cv2.MorphologyEx(rightMissing, rightMissing, MorphTypes.Open, cleanKernel, iterations: 1);
+
+                leftDefects = ExtractMaskDefects(
+                    leftMissing,
+                    leftRect,
+                    false,
+                    gray.Width,
+                    gray.Height,
+                    parameters);
+                rightDefects = ExtractMaskDefects(
+                    rightMissing,
+                    rightRect,
+                    true,
+                    gray.Width,
+                    gray.Height,
+                    parameters);
+            }
+        }
+
+        private static Mat CreateSilverShapeMask(
+            Mat gray,
+            Rect rect,
+            InspectionParameters parameters)
+        {
+            Mat shape = new Mat();
+            int closeSize = FitOddKernel(
+                parameters.PairedEdgeCloseKernelSize,
+                Math.Min(rect.Width, rect.Height));
+            using (Mat roi = new Mat(gray, rect))
+            using (Mat blur = new Mat())
+            using (Mat closeKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(closeSize, closeSize)))
+            using (Mat openKernel = Cv2.GetStructuringElement(
+                MorphShapes.Ellipse,
+                new OpenCvSharp.Size(3, 3)))
+            {
+                Cv2.GaussianBlur(roi, blur, new OpenCvSharp.Size(3, 3), 0);
+                Cv2.Threshold(
+                    blur,
+                    shape,
+                    parameters.EdgeMaskGrayThreshold,
+                    255,
+                    ThresholdTypes.Binary);
+                Cv2.MorphologyEx(shape, shape, MorphTypes.Close, closeKernel, iterations: 1);
+                Cv2.MorphologyEx(shape, shape, MorphTypes.Open, openKernel, iterations: 1);
+            }
+            return shape;
+        }
+
+        private static System.Collections.Generic.List<DefectCandidate> ExtractMaskDefects(
+            Mat mask,
+            Rect targetRect,
+            bool horizontallyMirrored,
+            int imageWidth,
+            int imageHeight,
+            InspectionParameters parameters)
+        {
+            var defects = new System.Collections.Generic.List<DefectCandidate>();
+            using (Mat labels = new Mat())
+            using (Mat stats = new Mat())
+            using (Mat centroids = new Mat())
+            {
+                int count = Cv2.ConnectedComponentsWithStats(mask, labels, stats, centroids);
+                int silverArea = Math.Max(1, targetRect.Width * targetRect.Height);
+                for (int i = 1; i < count; i++)
+                {
+                    int area = stats.At<int>(i, (int)ConnectedComponentsTypes.Area);
+                    int x = stats.At<int>(i, (int)ConnectedComponentsTypes.Left);
+                    int y = stats.At<int>(i, (int)ConnectedComponentsTypes.Top);
+                    int width = stats.At<int>(i, (int)ConnectedComponentsTypes.Width);
+                    int height = stats.At<int>(i, (int)ConnectedComponentsTypes.Height);
+                    if (area < parameters.EdgeMinimumDefectArea ||
+                        width < parameters.EdgeMinimumDefectWidth ||
+                        height < parameters.EdgeMinimumDefectHeight)
+                        continue;
+
+                    double fillRatio = area / (double)Math.Max(1, width * height);
+                    if (fillRatio < parameters.EdgeMinimumDefectFillRatio)
+                        continue;
+
+                    int mappedX = horizontallyMirrored
+                        ? targetRect.Width - x - width
+                        : x;
+                    Rect coreBox = new Rect(
+                        targetRect.X + mappedX,
+                        targetRect.Y + y,
+                        width,
+                        height);
+                    defects.Add(new DefectCandidate
+                    {
+                        Ratio = area / (double)silverArea,
+                        Box = ExpandRect(
+                            coreBox,
+                            parameters.EdgeBoxPadding,
+                            imageWidth,
+                            imageHeight)
+                    });
+                }
+            }
+
+            defects.Sort((left, right) => right.Ratio.CompareTo(left.Ratio));
+            if (defects.Count > parameters.MaximumEdgeDefectsPerSilverRegion)
+            {
+                defects.RemoveRange(
+                    parameters.MaximumEdgeDefectsPerSilverRegion,
+                    defects.Count - parameters.MaximumEdgeDefectsPerSilverRegion);
+            }
+            return defects;
+        }
+
+        private static System.Collections.Generic.List<DefectCandidate> FindLineDefects(
+            Mat gray,
+            Rect silverRect,
+            RegionParameters regionParameters,
+            InspectionParameters parameters)
+        {
+            Rect inner = ShrinkRect(
+                silverRect,
+                regionParameters.SilverInnerHorizontalInsetRatio,
+                regionParameters.SilverInnerVerticalInsetRatio);
+            var defects = new System.Collections.Generic.List<DefectCandidate>();
+            int lineLength = FitOddKernel(
+                parameters.LineKernelLength,
+                Math.Min(inner.Width, inner.Height));
+
+            using (Mat roi = new Mat(gray, inner))
+            using (Mat blur = new Mat())
+            using (Mat horizontalResponse = new Mat())
+            using (Mat verticalResponse = new Mat())
+            using (Mat horizontalMask = new Mat())
+            using (Mat verticalMask = new Mat())
+            using (Mat horizontalKernel = Cv2.GetStructuringElement(
+                MorphShapes.Rect,
+                new OpenCvSharp.Size(lineLength, 3)))
+            using (Mat verticalKernel = Cv2.GetStructuringElement(
+                MorphShapes.Rect,
+                new OpenCvSharp.Size(3, lineLength)))
+            using (Mat horizontalCleanKernel = Cv2.GetStructuringElement(
+                MorphShapes.Rect,
+                new OpenCvSharp.Size(5, 3)))
+            using (Mat verticalCleanKernel = Cv2.GetStructuringElement(
+                MorphShapes.Rect,
+                new OpenCvSharp.Size(3, 5)))
+            {
+                Cv2.GaussianBlur(roi, blur, new OpenCvSharp.Size(3, 3), 0);
+                Cv2.MorphologyEx(blur, horizontalResponse, MorphTypes.BlackHat, horizontalKernel);
+                Cv2.MorphologyEx(blur, verticalResponse, MorphTypes.BlackHat, verticalKernel);
+                Cv2.Threshold(
+                    horizontalResponse,
+                    horizontalMask,
+                    parameters.LineContrastThreshold,
+                    255,
+                    ThresholdTypes.Binary);
+                Cv2.Threshold(
+                    verticalResponse,
+                    verticalMask,
+                    parameters.LineContrastThreshold,
+                    255,
+                    ThresholdTypes.Binary);
+                Cv2.MorphologyEx(
+                    horizontalMask,
+                    horizontalMask,
+                    MorphTypes.Close,
+                    horizontalCleanKernel,
+                    iterations: 1);
+                Cv2.MorphologyEx(
+                    verticalMask,
+                    verticalMask,
+                    MorphTypes.Close,
+                    verticalCleanKernel,
+                    iterations: 1);
+
+                ExtractLineComponents(
+                    horizontalMask,
+                    inner,
+                    true,
+                    gray.Width,
+                    gray.Height,
+                    parameters,
+                    defects);
+                ExtractLineComponents(
+                    verticalMask,
+                    inner,
+                    false,
+                    gray.Width,
+                    gray.Height,
+                    parameters,
+                    defects);
+            }
+
+            defects.Sort((left, right) => right.Ratio.CompareTo(left.Ratio));
+            if (defects.Count > parameters.MaximumDefectsPerSilverRegion)
+            {
+                defects.RemoveRange(
+                    parameters.MaximumDefectsPerSilverRegion,
+                    defects.Count - parameters.MaximumDefectsPerSilverRegion);
+            }
+            return defects;
+        }
+
+        private static void ExtractLineComponents(
+            Mat mask,
+            Rect inner,
+            bool horizontal,
+            int imageWidth,
+            int imageHeight,
+            InspectionParameters parameters,
+            System.Collections.Generic.List<DefectCandidate> output)
+        {
+            using (Mat labels = new Mat())
+            using (Mat stats = new Mat())
+            using (Mat centroids = new Mat())
+            {
+                int count = Cv2.ConnectedComponentsWithStats(mask, labels, stats, centroids);
+                int innerArea = Math.Max(1, inner.Width * inner.Height);
+                for (int i = 1; i < count; i++)
+                {
+                    int area = stats.At<int>(i, (int)ConnectedComponentsTypes.Area);
+                    int x = stats.At<int>(i, (int)ConnectedComponentsTypes.Left);
+                    int y = stats.At<int>(i, (int)ConnectedComponentsTypes.Top);
+                    int width = stats.At<int>(i, (int)ConnectedComponentsTypes.Width);
+                    int height = stats.At<int>(i, (int)ConnectedComponentsTypes.Height);
+                    int length = horizontal ? width : height;
+                    int thickness = horizontal ? height : width;
+                    if (area < parameters.LineMinimumArea ||
+                        length < parameters.LineMinimumLength ||
+                        thickness > parameters.LineMaximumWidth)
+                        continue;
+
+                    Rect core = new Rect(inner.X + x, inner.Y + y, width, height);
+                    output.Add(new DefectCandidate
+                    {
+                        Ratio = area / (double)innerArea,
+                        Box = ExpandRect(
+                            core,
+                            parameters.LineBoxPadding,
+                            imageWidth,
+                            imageHeight)
+                    });
                 }
             }
         }
 
-        private static bool IsNearSilverInnerBorder(int x, int y, int width, int height, int roiWidth, int roiHeight)
+        private static int CountSilverSupportSides(
+            Mat silverMask,
+            Rect defectBox,
+            double minimumSideSilverRatio)
         {
-            int guardX = Math.Max(14, (int)Math.Round(roiWidth * 0.12));
-            int guardY = Math.Max(14, (int)Math.Round(roiHeight * 0.12));
-            return x <= guardX ||
-                y <= guardY ||
-                x + width >= roiWidth - guardX ||
-                y + height >= roiHeight - guardY;
+            int band = Math.Max(3, Math.Min(8, Math.Min(defectBox.Width, defectBox.Height) / 3));
+            int extension = Math.Max(2, band / 2);
+
+            Rect[] sideBands =
+            {
+                new Rect(defectBox.X - extension, defectBox.Y - band, defectBox.Width + extension * 2, band),
+                new Rect(defectBox.X - extension, defectBox.Y + defectBox.Height, defectBox.Width + extension * 2, band),
+                new Rect(defectBox.X - band, defectBox.Y - extension, band, defectBox.Height + extension * 2),
+                new Rect(defectBox.X + defectBox.Width, defectBox.Y - extension, band, defectBox.Height + extension * 2)
+            };
+
+            int supportSides = 0;
+            foreach (Rect sideBand in sideBands)
+            {
+                if (MaskRatioInsideImage(silverMask, sideBand) >= minimumSideSilverRatio)
+                    supportSides++;
+            }
+
+            return supportSides;
+        }
+
+        private static double MaskRatioInsideImage(Mat mask, Rect rect)
+        {
+            int x1 = Math.Max(0, rect.X);
+            int y1 = Math.Max(0, rect.Y);
+            int x2 = Math.Min(mask.Width, rect.X + rect.Width);
+            int y2 = Math.Min(mask.Height, rect.Y + rect.Height);
+            if (x2 <= x1 || y2 <= y1)
+                return 0;
+
+            Rect clipped = new Rect(x1, y1, x2 - x1, y2 - y1);
+            using (Mat roi = new Mat(mask, clipped))
+            {
+                return Cv2.CountNonZero(roi) / (double)(clipped.Width * clipped.Height);
+            }
+        }
+
+        private static double ThresholdRatio(Mat gray, Rect rect, double threshold, ThresholdTypes thresholdType)
+        {
+            using (Mat roi = new Mat(gray, rect))
+            using (Mat mask = new Mat())
+            {
+                Cv2.Threshold(roi, mask, threshold, 255, thresholdType);
+                return rect.Width <= 0 || rect.Height <= 0
+                    ? 0
+                    : Cv2.CountNonZero(mask) / (double)(rect.Width * rect.Height);
+            }
+        }
+
+        private static bool IsModuleFullyVisible(
+            Mat gray,
+            int darkThreshold,
+            int borderMargin,
+            double maximumDarkRatio)
+        {
+            int thickness = Math.Max(1, Math.Min(
+                Math.Min(gray.Width, gray.Height) / 4,
+                borderMargin + 1));
+            Rect[] borders =
+            {
+                new Rect(0, 0, gray.Width, thickness),
+                new Rect(0, gray.Height - thickness, gray.Width, thickness),
+                new Rect(0, 0, thickness, gray.Height),
+                new Rect(gray.Width - thickness, 0, thickness, gray.Height)
+            };
+
+            foreach (Rect border in borders)
+            {
+                double darkRatio = ThresholdRatio(
+                    gray,
+                    border,
+                    darkThreshold,
+                    ThresholdTypes.BinaryInv);
+                if (darkRatio >= maximumDarkRatio)
+                    return false;
+            }
+            return true;
+        }
+
+        private static byte RegionPercentile(Mat gray, Rect rect, double percentile, byte fallback)
+        {
+            using (Mat roi = new Mat(gray, rect))
+            {
+                return MaskedPercentile(roi, null, percentile, fallback);
+            }
+        }
+
+        private static byte MaskedPercentile(Mat gray, Mat mask, double percentile, byte fallback)
+        {
+            int[] histogram = new int[256];
+            int total = 0;
+
+            for (int y = 0; y < gray.Rows; y++)
+            for (int x = 0; x < gray.Cols; x++)
+            {
+                if (mask != null && mask.At<byte>(y, x) == 0)
+                    continue;
+
+                byte value = gray.At<byte>(y, x);
+                histogram[value]++;
+                total++;
+            }
+
+            if (total < Math.Max(20, gray.Rows * gray.Cols / 10))
+            {
+                Array.Clear(histogram, 0, histogram.Length);
+                total = 0;
+                for (int y = 0; y < gray.Rows; y++)
+                for (int x = 0; x < gray.Cols; x++)
+                {
+                    byte value = gray.At<byte>(y, x);
+                    histogram[value]++;
+                    total++;
+                }
+            }
+
+            if (total == 0)
+                return fallback;
+
+            int target = Math.Max(1, (int)Math.Ceiling(total * Math.Max(0, Math.Min(1, percentile))));
+            int cumulative = 0;
+            for (int i = 0; i < histogram.Length; i++)
+            {
+                cumulative += histogram[i];
+                if (cumulative >= target)
+                    return (byte)i;
+            }
+
+            return fallback;
+        }
+
+        private static double Clamp(double value, double minimum, double maximum)
+        {
+            return Math.Max(minimum, Math.Min(maximum, value));
         }
 
         private static int MakeOdd(int value)
@@ -839,6 +1905,64 @@ namespace WindowsFormsApp1
             if (value < 3)
                 value = 3;
             return value % 2 == 0 ? value + 1 : value;
+        }
+
+        private static int FitOddKernel(int requested, int maximum)
+        {
+            int limit = Math.Max(3, maximum);
+            if (limit % 2 == 0)
+                limit--;
+            return Math.Min(MakeOdd(requested), limit);
+        }
+
+        private static Rect ExpandRect(Rect rect, int padding, int imageWidth, int imageHeight)
+        {
+            return ClampRectToImage(
+                new Rect(
+                    rect.X - padding,
+                    rect.Y - padding,
+                    rect.Width + padding * 2,
+                    rect.Height + padding * 2),
+                imageWidth,
+                imageHeight);
+        }
+
+        private static Rect ExpandDefectRect(
+            Rect core,
+            int padding,
+            int minimumWidth,
+            int minimumHeight,
+            int imageWidth,
+            int imageHeight)
+        {
+            int width = Math.Max(minimumWidth, core.Width + padding * 2);
+            int height = Math.Max(minimumHeight, core.Height + padding * 2);
+            int centerX = core.X + core.Width / 2;
+            int centerY = core.Y + core.Height / 2;
+            return ClampRectToImage(
+                new Rect(centerX - width / 2, centerY - height / 2, width, height),
+                imageWidth,
+                imageHeight);
+        }
+
+        private static Rect Intersect(Rect first, Rect second)
+        {
+            int left = Math.Max(first.X, second.X);
+            int top = Math.Max(first.Y, second.Y);
+            int right = Math.Min(first.X + first.Width, second.X + second.Width);
+            int bottom = Math.Min(first.Y + first.Height, second.Y + second.Height);
+            return right <= left || bottom <= top
+                ? Rect.Empty
+                : new Rect(left, top, right - left, bottom - top);
+        }
+
+        private static Rect Union(Rect first, Rect second)
+        {
+            int left = Math.Min(first.X, second.X);
+            int top = Math.Min(first.Y, second.Y);
+            int right = Math.Max(first.X + first.Width, second.X + second.Width);
+            int bottom = Math.Max(first.Y + first.Height, second.Y + second.Height);
+            return new Rect(left, top, right - left, bottom - top);
         }
 
         private static Rect ShrinkRect(Rect rect, double xRatio, double yRatio)
