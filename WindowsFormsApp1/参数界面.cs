@@ -119,7 +119,62 @@ namespace WindowsFormsApp1
                     parameters.ClassificationCamera.Exposure, parameters.ClassificationCamera.Gain);
         }
 
+        private void BuildAdaptiveDecisionPage()
+        {
+            GroupBox group = CreateGroup("三级分流", 630, 310);
+            FlowLayoutPanel flow = CreateVerticalFlow();
+            group.Controls.Add(flow);
+            AddRatioPair(flow, "中间残银", p => p.MiddleSilverReviewRatio, (p, v) => p.MiddleSilverReviewRatio = v,
+                p => p.MiddleSilverNgRatio, (p, v) => p.MiddleSilverNgRatio = v);
+            AddHelp(flow, "明显OK：与正常样本库足够接近。明显NG：物料未完整显示、明显中间残银，或形状异常超过全部OK样本上限。其余进入复检；没有可靠区域时不画缺陷框。");
+            decisionFlowPanel.Controls.Add(group);
+        }
+
+        private void BuildAdaptiveAdvancedPage()
+        {
+            GroupBox adaptive = CreateGroup("正常模型与自适应银区", 630, 760);
+            FlowLayoutPanel flow = CreateVerticalFlow();
+            adaptive.Controls.Add(flow);
+            AddInteger(flow, "银区自适应阈值下限", p => p.AdaptiveSilverThresholdMinimum, (p, v) => p.AdaptiveSilverThresholdMinimum = v, 0, 255);
+            AddInteger(flow, "银区自适应阈值上限", p => p.AdaptiveSilverThresholdMaximum, (p, v) => p.AdaptiveSilverThresholdMaximum = v, 0, 255);
+            AddRatio(flow, "闭运算核/银区短边", p => p.AdaptiveMaskCloseRatio, (p, v) => p.AdaptiveMaskCloseRatio = v, 0.5m, 50);
+            AddRatio(flow, "开运算核/银区短边", p => p.AdaptiveMaskOpenRatio, (p, v) => p.AdaptiveMaskOpenRatio = v, 0.5m, 25);
+            AddRatio(flow, "内部腐蚀核/银区短边", p => p.AdaptiveInteriorErodeRatio, (p, v) => p.AdaptiveInteriorErodeRatio = v, 0.5m, 50);
+            AddRatio(flow, "纹理背景核/银区短边", p => p.AdaptiveBackgroundKernelRatio, (p, v) => p.AdaptiveBackgroundKernelRatio = v, 1, 80);
+            AddRatio(flow, "正常形状核心概率", p => p.AdaptiveShapeCoreProbability, (p, v) => p.AdaptiveShapeCoreProbability = v, 50, 100);
+            AddNumber(flow, "纹理最小归一化对比度", p => p.AdaptiveTextureMinimumContrast, (p, v) => p.AdaptiveTextureMinimumContrast = v, 0.10m, 20, 2);
+            AddRatio(flow, "纹理自适应分位", p => p.AdaptiveTexturePercentile, (p, v) => p.AdaptiveTexturePercentile = v, 80, 99.99m);
+            AddNumber(flow, "正常候选安全系数", p => p.AdaptiveCandidateSafetyFactor, (p, v) => p.AdaptiveCandidateSafetyFactor = v, 1, 5, 2);
+            AddNumber(flow, "NG异常倍数", p => p.AdaptiveNgMultiplier, (p, v) => p.AdaptiveNgMultiplier = v, 1, 10, 2);
+            AddRatio(flow, "明显缺形NG最小占比", p => p.AdaptiveShapeNgRatioMinimum, (p, v) => p.AdaptiveShapeNgRatioMinimum = v, 0, 100);
+            AddRatio(flow, "明显纹理NG最小占比", p => p.AdaptiveTextureNgRatioMinimum, (p, v) => p.AdaptiveTextureNgRatioMinimum = v, 0, 100);
+            AddRatio(flow, "提示框扩展/银区短边", p => p.AdaptiveBoxPaddingRatio, (p, v) => p.AdaptiveBoxPaddingRatio = v, 0, 25);
+            AddHelp(flow, "形态学核尺寸由银区短边和比例自动计算，不再使用固定像素核。正常范围由确认OK图片生成；调节这些参数后应重新生成正常模型。");
+            advancedFlowPanel.Controls.Add(adaptive);
+
+            GroupBox visibility = CreateGroup("物料完整显示", 630, 300);
+            FlowLayoutPanel visibilityFlow = CreateVerticalFlow();
+            visibility.Controls.Add(visibilityFlow);
+            AddInteger(visibilityFlow, "画面边界检查宽度", p => p.ModuleVisibleMargin, (p, v) => p.ModuleVisibleMargin = v, 0, 100);
+            AddRatio(visibilityFlow, "边界深色占比上限", p => p.ModuleBorderDarkRatio, (p, v) => p.ModuleBorderDarkRatio = v, 0, 100);
+            AddHelp(visibilityFlow, "只检查物料是否严重超出画面，不检查轻微角度和中心偏移。");
+            advancedFlowPanel.Controls.Add(visibility);
+
+            GroupBox middle = CreateGroup("中间残银", 630, 360);
+            FlowLayoutPanel middleFlow = CreateVerticalFlow();
+            middle.Controls.Add(middleFlow);
+            AddInteger(middleFlow, "中间阈值偏移", p => p.MiddleSilverThresholdOffset, (p, v) => p.MiddleSilverThresholdOffset = v, 0, 255);
+            AddInteger(middleFlow, "中间阈值下限", p => p.MiddleSilverThresholdMinimum, (p, v) => p.MiddleSilverThresholdMinimum = v, 0, 255);
+            AddInteger(middleFlow, "中间阈值上限", p => p.MiddleSilverThresholdMaximum, (p, v) => p.MiddleSilverThresholdMaximum = v, 0, 255);
+            advancedFlowPanel.Controls.Add(middle);
+        }
+
         private void BuildDecisionPage()
+        {
+            BuildAdaptiveDecisionPage();
+        }
+
+        private void BuildLegacyDecisionPage()
         {
             GroupBox highBad = CreateGroup("数值越高越差", 630, 410);
             FlowLayoutPanel flow = CreateVerticalFlow();
@@ -149,6 +204,11 @@ namespace WindowsFormsApp1
         }
 
         private void BuildAdvancedPage()
+        {
+            BuildAdaptiveAdvancedPage();
+        }
+
+        private void BuildLegacyAdvancedPage()
         {
             GroupBox thresholds = CreateGroup("基础灰度与二值化", 630, 380);
             FlowLayoutPanel flow = CreateVerticalFlow();

@@ -128,6 +128,24 @@ namespace WindowsFormsApp1
 
         public int ModuleVisibleMargin { get; set; } = 2;
         public double ModuleBorderDarkRatio { get; set; } = 0.50;
+
+        // 正常样本模型与银区尺寸自适应参数。核尺寸均按银区最短边比例计算。
+        public double AdaptiveOkSafetyFactor { get; set; } = 0.95;
+        public double AdaptiveDefaultOkDistance { get; set; } = 0.06;
+        public int AdaptiveSilverThresholdMinimum { get; set; } = 115;
+        public int AdaptiveSilverThresholdMaximum { get; set; } = 190;
+        public double AdaptiveMaskCloseRatio { get; set; } = 0.035;
+        public double AdaptiveMaskOpenRatio { get; set; } = 0.012;
+        public double AdaptiveInteriorErodeRatio { get; set; } = 0.080;
+        public double AdaptiveBackgroundKernelRatio { get; set; } = 0.130;
+        public double AdaptiveShapeCoreProbability { get; set; } = 0.80;
+        public double AdaptiveTextureMinimumContrast { get; set; } = 1.80;
+        public double AdaptiveTexturePercentile { get; set; } = 0.99;
+        public double AdaptiveCandidateSafetyFactor { get; set; } = 1.05;
+        public double AdaptiveNgMultiplier { get; set; } = 1.50;
+        public double AdaptiveShapeNgRatioMinimum { get; set; } = 0.075;
+        public double AdaptiveTextureNgRatioMinimum { get; set; } = 0.008;
+        public double AdaptiveBoxPaddingRatio { get; set; } = 0.020;
         public int RoughSilverThresholdMinimum { get; set; } = 130;
         public int RoughSilverThresholdMaximum { get; set; } = 175;
         public int ObservedP25Offset { get; set; } = 22;
@@ -223,6 +241,22 @@ namespace WindowsFormsApp1
             LineBoxPadding = Math.Max(0, LineBoxPadding);
             ModuleVisibleMargin = Math.Max(0, ModuleVisibleMargin);
             ModuleBorderDarkRatio = Ratio(ModuleBorderDarkRatio);
+            AdaptiveOkSafetyFactor = Clamp(AdaptiveOkSafetyFactor, 0.10, 0.999);
+            AdaptiveDefaultOkDistance = Clamp(AdaptiveDefaultOkDistance, 0.0001, 2.0);
+            AdaptiveSilverThresholdMinimum = Gray(AdaptiveSilverThresholdMinimum);
+            AdaptiveSilverThresholdMaximum = Math.Max(AdaptiveSilverThresholdMinimum, Gray(AdaptiveSilverThresholdMaximum));
+            AdaptiveMaskCloseRatio = Clamp(AdaptiveMaskCloseRatio, 0.005, 0.50);
+            AdaptiveMaskOpenRatio = Clamp(AdaptiveMaskOpenRatio, 0.005, 0.25);
+            AdaptiveInteriorErodeRatio = Clamp(AdaptiveInteriorErodeRatio, 0.005, 0.50);
+            AdaptiveBackgroundKernelRatio = Clamp(AdaptiveBackgroundKernelRatio, 0.01, 0.80);
+            AdaptiveShapeCoreProbability = Clamp(AdaptiveShapeCoreProbability, 0.50, 1.0);
+            AdaptiveTextureMinimumContrast = Clamp(AdaptiveTextureMinimumContrast, 0.10, 20.0);
+            AdaptiveTexturePercentile = Clamp(AdaptiveTexturePercentile, 0.80, 0.9999);
+            AdaptiveCandidateSafetyFactor = Clamp(AdaptiveCandidateSafetyFactor, 1.0, 5.0);
+            AdaptiveNgMultiplier = Clamp(AdaptiveNgMultiplier, 1.0, 10.0);
+            AdaptiveShapeNgRatioMinimum = Ratio(AdaptiveShapeNgRatioMinimum);
+            AdaptiveTextureNgRatioMinimum = Ratio(AdaptiveTextureNgRatioMinimum);
+            AdaptiveBoxPaddingRatio = Clamp(AdaptiveBoxPaddingRatio, 0, 0.25);
             RoughSilverThresholdMinimum = Gray(RoughSilverThresholdMinimum);
             RoughSilverThresholdMaximum = Math.Max(RoughSilverThresholdMinimum, Gray(RoughSilverThresholdMaximum));
             ObservedP25Offset = Gray(ObservedP25Offset);
@@ -267,6 +301,8 @@ namespace WindowsFormsApp1
 
         private static int Gray(int value) => Math.Max(0, Math.Min(255, value));
         private static double Ratio(double value) => Math.Max(0, Math.Min(1, value));
+        private static double Clamp(double value, double minimum, double maximum) =>
+            Math.Max(minimum, Math.Min(maximum, value));
         private static int OddAtLeastThree(int value)
         {
             value = Math.Max(3, value);

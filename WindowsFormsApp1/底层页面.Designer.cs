@@ -35,9 +35,9 @@
             this.登录界面ToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.配方界面ToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.调试界面ToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.料号添加ToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.信息1 = new WindowsFormsApp1.信息();
-            this.料号添加ToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.menuStrip1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
             this.splitContainer1.Panel2.SuspendLayout();
@@ -46,6 +46,7 @@
             // 
             // menuStrip1
             // 
+            this.menuStrip1.ImageScalingSize = new System.Drawing.Size(20, 20);
             this.menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.自动ToolStripMenuItem,
             this.相机设置ToolStripMenuItem,
@@ -56,7 +57,7 @@
             this.料号添加ToolStripMenuItem});
             this.menuStrip1.Location = new System.Drawing.Point(0, 0);
             this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(2177, 43);
+            this.menuStrip1.Size = new System.Drawing.Size(1924, 53);
             this.menuStrip1.TabIndex = 0;
             this.menuStrip1.Text = "menuStrip1";
             // 
@@ -64,7 +65,7 @@
             // 
             this.自动ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.自动ToolStripMenuItem.Name = "自动ToolStripMenuItem";
-            this.自动ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
+            this.自动ToolStripMenuItem.Size = new System.Drawing.Size(170, 49);
             this.自动ToolStripMenuItem.Text = "自动页面";
             this.自动ToolStripMenuItem.Click += new System.EventHandler(this.自动ToolStripMenuItem_Click);
             // 
@@ -72,7 +73,7 @@
             // 
             this.相机设置ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.相机设置ToolStripMenuItem.Name = "相机设置ToolStripMenuItem";
-            this.相机设置ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
+            this.相机设置ToolStripMenuItem.Size = new System.Drawing.Size(170, 49);
             this.相机设置ToolStripMenuItem.Text = "相机设置";
             this.相机设置ToolStripMenuItem.Click += new System.EventHandler(this.相机设置ToolStripMenuItem_Click);
             // 
@@ -80,7 +81,7 @@
             // 
             this.参数界面ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.参数界面ToolStripMenuItem.Name = "参数界面ToolStripMenuItem";
-            this.参数界面ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
+            this.参数界面ToolStripMenuItem.Size = new System.Drawing.Size(170, 49);
             this.参数界面ToolStripMenuItem.Text = "参数界面";
             this.参数界面ToolStripMenuItem.Click += new System.EventHandler(this.参数界面ToolStripMenuItem_Click);
             // 
@@ -88,7 +89,7 @@
             // 
             this.登录界面ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.登录界面ToolStripMenuItem.Name = "登录界面ToolStripMenuItem";
-            this.登录界面ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
+            this.登录界面ToolStripMenuItem.Size = new System.Drawing.Size(170, 49);
             this.登录界面ToolStripMenuItem.Text = "登录界面";
             this.登录界面ToolStripMenuItem.Click += new System.EventHandler(this.登录界面ToolStripMenuItem_Click);
             // 
@@ -96,7 +97,7 @@
             // 
             this.配方界面ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.配方界面ToolStripMenuItem.Name = "配方界面ToolStripMenuItem";
-            this.配方界面ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
+            this.配方界面ToolStripMenuItem.Size = new System.Drawing.Size(170, 49);
             this.配方界面ToolStripMenuItem.Text = "料号设置";
             this.配方界面ToolStripMenuItem.Click += new System.EventHandler(this.配方界面ToolStripMenuItem_Click);
             // 
@@ -104,49 +105,53 @@
             // 
             this.调试界面ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
             this.调试界面ToolStripMenuItem.Name = "调试界面ToolStripMenuItem";
-            this.调试界面ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
+            this.调试界面ToolStripMenuItem.Size = new System.Drawing.Size(170, 49);
             this.调试界面ToolStripMenuItem.Text = "调试界面";
             this.调试界面ToolStripMenuItem.Click += new System.EventHandler(this.调试界面ToolStripMenuItem_Click);
+            // 
+            // 料号添加ToolStripMenuItem
+            // 
+            this.料号添加ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.料号添加ToolStripMenuItem.Name = "料号添加ToolStripMenuItem";
+            this.料号添加ToolStripMenuItem.Size = new System.Drawing.Size(170, 49);
+            this.料号添加ToolStripMenuItem.Text = "料号管理";
+            this.料号添加ToolStripMenuItem.Click += new System.EventHandler(this.料号添加ToolStripMenuItem_Click);
             // 
             // splitContainer1
             // 
             this.splitContainer1.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.splitContainer1.Location = new System.Drawing.Point(0, 43);
+            this.splitContainer1.Location = new System.Drawing.Point(0, 53);
+            this.splitContainer1.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
             this.splitContainer1.Name = "splitContainer1";
             // 
             // splitContainer1.Panel2
             // 
             this.splitContainer1.Panel2.Controls.Add(this.信息1);
-            this.splitContainer1.Size = new System.Drawing.Size(2177, 1091);
-            this.splitContainer1.SplitterDistance = 1855;
+            this.splitContainer1.Size = new System.Drawing.Size(1924, 1002);
+            this.splitContainer1.SplitterDistance = 1639;
+            this.splitContainer1.SplitterWidth = 5;
             this.splitContainer1.TabIndex = 1;
             // 
             // 信息1
             // 
             this.信息1.Dock = System.Windows.Forms.DockStyle.Fill;
             this.信息1.Location = new System.Drawing.Point(0, 0);
+            this.信息1.Margin = new System.Windows.Forms.Padding(5, 5, 5, 5);
             this.信息1.Name = "信息1";
-            this.信息1.Size = new System.Drawing.Size(318, 1091);
+            this.信息1.Size = new System.Drawing.Size(280, 1002);
             this.信息1.TabIndex = 0;
-            // 
-            // 料号添加ToolStripMenuItem
-            // 
-            this.料号添加ToolStripMenuItem.Font = new System.Drawing.Font("Microsoft YaHei UI", 20.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
-            this.料号添加ToolStripMenuItem.Name = "料号添加ToolStripMenuItem";
-            this.料号添加ToolStripMenuItem.Size = new System.Drawing.Size(135, 39);
-            this.料号添加ToolStripMenuItem.Text = "料号管理";
-            this.料号添加ToolStripMenuItem.Click += new System.EventHandler(this.料号添加ToolStripMenuItem_Click);
             // 
             // 底层页面
             // 
-            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(8F, 15F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(2177, 1134);
+            this.ClientSize = new System.Drawing.Size(1924, 1055);
             this.Controls.Add(this.splitContainer1);
             this.Controls.Add(this.menuStrip1);
             this.MainMenuStrip = this.menuStrip1;
+            this.Margin = new System.Windows.Forms.Padding(4, 4, 4, 4);
             this.Name = "底层页面";
-            this.Text = "四轴绕线连线";
+            this.Text = "自动化六面检程序";
             this.WindowState = System.Windows.Forms.FormWindowState.Maximized;
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.底层页面_FormClosing);
             this.Shown += new System.EventHandler(this.底层页面_Shown);

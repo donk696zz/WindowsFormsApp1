@@ -551,23 +551,11 @@ namespace WindowsFormsApp1
                 };
 
                 var result = new ModuleInspectionResult { Regions = regions };
-                SilverDefectStats leftDefects = AnalyzeSilverDefects(gray, leftSilver, regionParameters, inspectionParameters);
-                SilverDefectStats rightDefects = AnalyzeSilverDefects(gray, rightSilver, regionParameters, inspectionParameters);
-                System.Collections.Generic.List<DefectCandidate> leftEdgeDefects =
-                    FindEdgeMissingDefects(gray, leftSilver, inspectionParameters);
-                System.Collections.Generic.List<DefectCandidate> rightEdgeDefects =
-                    FindEdgeMissingDefects(gray, rightSilver, inspectionParameters);
-                System.Collections.Generic.List<DefectCandidate> leftLineDefects =
-                    FindLineDefects(gray, leftSilver, regionParameters, inspectionParameters);
-                System.Collections.Generic.List<DefectCandidate> rightLineDefects =
-                    FindLineDefects(gray, rightSilver, regionParameters, inspectionParameters);
-                FindPairedEdgeDefects(
+                AdaptiveSilverEvaluation adaptive = AdaptiveSilverNormalModel.Evaluate(
                     gray,
                     leftSilver,
                     rightSilver,
-                    inspectionParameters,
-                    out System.Collections.Generic.List<DefectCandidate> leftPairedEdgeDefects,
-                    out System.Collections.Generic.List<DefectCandidate> rightPairedEdgeDefects);
+                    inspectionParameters);
                 SplitSilverRectVertically(leftSilver, regionParameters.SilverVerticalSplitRatio, out Rect leftSilverTop, out Rect leftSilverBottom);
                 SplitSilverRectVertically(rightSilver, regionParameters.SilverVerticalSplitRatio, out Rect rightSilverTop, out Rect rightSilverBottom);
                 Rect middleErrorBox;
@@ -582,17 +570,16 @@ namespace WindowsFormsApp1
                 result.LeftSilverBottomCoverage = MaskRatio(silverMask, leftSilverBottom);
                 result.RightSilverTopCoverage = MaskRatio(silverMask, rightSilverTop);
                 result.RightSilverBottomCoverage = MaskRatio(silverMask, rightSilverBottom);
-                result.LeftMaxMissingRatio = leftDefects.MissingRatio;
-                result.RightMaxMissingRatio = rightDefects.MissingRatio;
-                result.LeftInnerDefectRatio = leftDefects.InnerDefectRatio;
-                result.RightInnerDefectRatio = rightDefects.InnerDefectRatio;
-                result.LeftEdgeMissingRatio = MaximumRatio(leftEdgeDefects);
-                result.RightEdgeMissingRatio = MaximumRatio(rightEdgeDefects);
-                result.LeftPairedEdgeRatio = MaximumRatio(leftPairedEdgeDefects);
-                result.RightPairedEdgeRatio = MaximumRatio(rightPairedEdgeDefects);
-                result.LeftLineDefectRatio = MaximumRatio(leftLineDefects);
-                result.RightLineDefectRatio = MaximumRatio(rightLineDefects);
-                CheckEdgeSilver(edgeSilverMask, edgeRects, edgeTypes, edgeNames, result, regionParameters, inspectionParameters);
+                result.LeftMaxMissingRatio = 0;
+                result.RightMaxMissingRatio = 0;
+                result.LeftInnerDefectRatio = 0;
+                result.RightInnerDefectRatio = 0;
+                result.LeftEdgeMissingRatio = 0;
+                result.RightEdgeMissingRatio = 0;
+                result.LeftPairedEdgeRatio = 0;
+                result.RightPairedEdgeRatio = 0;
+                result.LeftLineDefectRatio = 0;
+                result.RightLineDefectRatio = 0;
 
                 Rect moduleBox = regions.ModuleBox;
                 result.ModuleFullyVisible = IsModuleFullyVisible(
@@ -619,100 +606,31 @@ namespace WindowsFormsApp1
                         $"middle review {result.MiddleSilverRatio:P1}");
                 }
 
-                CheckCoverageDecision(result, result.LeftSilverTopCoverage,
-                    inspectionParameters.SilverTopCoverageNgRatio,
-                    inspectionParameters.SilverCoverageOkRatio,
-                    leftSilverTop, "L silver top", "L top");
-                CheckCoverageDecision(result, result.LeftSilverBottomCoverage,
-                    inspectionParameters.SilverBottomCoverageNgRatio,
-                    inspectionParameters.SilverCoverageOkRatio,
-                    leftSilverBottom, "L silver bottom", "L bottom");
-                CheckCoverageDecision(result, result.RightSilverTopCoverage,
-                    inspectionParameters.SilverTopCoverageNgRatio,
-                    inspectionParameters.SilverCoverageOkRatio,
-                    rightSilverTop, "R silver top", "R top");
-                CheckCoverageDecision(result, result.RightSilverBottomCoverage,
-                    inspectionParameters.SilverBottomCoverageNgRatio,
-                    inspectionParameters.SilverCoverageOkRatio,
-                    rightSilverBottom, "R silver bottom", "R bottom");
-
-                if (result.LeftMaxMissingRatio > inspectionParameters.MissingSilverNgRatio)
+                foreach (AdaptiveSilverRegion abnormal in adaptive.Regions)
                 {
-                    result.Reasons.Add($"L silver missing {result.LeftMaxMissingRatio:P1}");
-                    AddErrorRegion(result, leftDefects.MissingBox, $"L missing {result.LeftMaxMissingRatio:P1}");
-                }
-                else if (result.LeftMaxMissingRatio >= inspectionParameters.MissingSilverReviewRatio)
-                {
-                    AddReviewReason(result,
-                        $"L silver missing review {result.LeftMaxMissingRatio:P1}",
-                        leftDefects.MissingBox,
-                        $"L missing review {result.LeftMaxMissingRatio:P1}");
-                }
-                if (result.RightMaxMissingRatio > inspectionParameters.MissingSilverNgRatio)
-                {
-                    result.Reasons.Add($"R silver missing {result.RightMaxMissingRatio:P1}");
-                    AddErrorRegion(result, rightDefects.MissingBox, $"R missing {result.RightMaxMissingRatio:P1}");
-                }
-                else if (result.RightMaxMissingRatio >= inspectionParameters.MissingSilverReviewRatio)
-                {
-                    AddReviewReason(result,
-                        $"R silver missing review {result.RightMaxMissingRatio:P1}",
-                        rightDefects.MissingBox,
-                        $"R missing review {result.RightMaxMissingRatio:P1}");
-                }
-                CheckInnerDefectDecisions(
-                    result, leftDefects.InnerDefects, "L", inspectionParameters);
-                CheckInnerDefectDecisions(
-                    result, rightDefects.InnerDefects, "R", inspectionParameters);
-                CheckDefectDecisions(
-                    result,
-                    leftEdgeDefects,
-                    "L edge missing",
-                    inspectionParameters.EdgeMissingReviewRatio,
-                    inspectionParameters.EdgeMissingNgRatio);
-                CheckDefectDecisions(
-                    result,
-                    rightEdgeDefects,
-                    "R edge missing",
-                    inspectionParameters.EdgeMissingReviewRatio,
-                    inspectionParameters.EdgeMissingNgRatio);
-                CheckDefectDecisions(
-                    result,
-                    leftLineDefects,
-                    "L dark line",
-                    inspectionParameters.LineDefectReviewRatio,
-                    inspectionParameters.LineDefectNgRatio);
-                CheckDefectDecisions(
-                    result,
-                    rightLineDefects,
-                    "R dark line",
-                    inspectionParameters.LineDefectReviewRatio,
-                    inspectionParameters.LineDefectNgRatio);
-
-                if (DefectReviewClassifier.TryPredictRuntime(source, out bool classifierReview) &&
-                    classifierReview)
-                {
-                    DefectCandidate classifierCandidate = SelectLargestCandidate(
-                        leftDefects.InnerDefects,
-                        rightDefects.InnerDefects,
-                        leftEdgeDefects,
-                        rightEdgeDefects,
-                        leftPairedEdgeDefects,
-                        rightPairedEdgeDefects,
-                        leftLineDefects,
-                        rightLineDefects);
-                    if (classifierCandidate != null)
+                    if (abnormal.IsNg)
                     {
-                        AddReviewReason(
-                            result,
-                            "appearance classifier review",
-                            classifierCandidate.Box,
-                            "appearance review");
+                        result.Reasons.Add($"{abnormal.Kind} abnormal {abnormal.Ratio:P1}");
+                        AddErrorRegion(result, abnormal.Box,
+                            $"{abnormal.Kind} {abnormal.Ratio:P1}");
                     }
                     else
                     {
-                        result.ReviewReasons.Add("appearance classifier review");
+                        AddReviewReason(result,
+                            $"{abnormal.Kind} review {abnormal.Ratio:P1}",
+                            abnormal.Box,
+                            $"{abnormal.Kind} review {abnormal.Ratio:P1}");
                     }
+                }
+
+                if (!adaptive.HasModel)
+                {
+                    result.ReviewReasons.Add("normal model unavailable");
+                }
+                else if (!adaptive.IsObviousOk && result.Reasons.Count == 0 && result.ReviewReasons.Count == 0)
+                {
+                    result.ReviewReasons.Add(
+                        $"outside normal range {adaptive.NormalDistance:F4} > {adaptive.OkDistanceThreshold:F4}");
                 }
 
                 result.Decision = result.Reasons.Count > 0

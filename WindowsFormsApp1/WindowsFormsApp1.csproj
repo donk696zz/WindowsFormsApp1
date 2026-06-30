@@ -38,7 +38,7 @@
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="检测模型\defect_review_svm.xml">
+    <Content Include="检测模型\silver_normal_model.bin" Condition="Exists('检测模型\silver_normal_model.bin')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Reference Include="HslCommunication, Version=11.7.0.0, Culture=neutral, PublicKeyToken=3d72ad3b6b5ec0e3, processorArchitecture=MSIL">
@@ -86,7 +86,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="OpenCvImageHelper.cs" />
-    <Compile Include="DefectReviewClassifier.cs" />
+    <Compile Include="AdaptiveSilverNormalModel.cs" />
     <Compile Include="VisionParameters.cs" />
     <Compile Include="ResponsiveLayoutService.cs" />
     <Compile Include="MVS变量.cs" />
