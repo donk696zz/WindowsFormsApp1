@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 using OpenCvSharp;
 
@@ -33,7 +34,8 @@ namespace WindowsFormsApp1
             }
             else
             {
-                if (string.IsNullOrWhiteSpace(material) || !materials.Contains(material))
+                if (string.IsNullOrWhiteSpace(material) ||
+                    !materials.Contains(material, StringComparer.OrdinalIgnoreCase))
                     material = materials[0];
                 料号切换读取文件.加载料号到全局变量(material, false);
             }
@@ -59,11 +61,10 @@ namespace WindowsFormsApp1
                         $"LeftBottomCoverage={result.LeftSilverBottomCoverage:P3}{Environment.NewLine}" +
                         $"RightTopCoverage={result.RightSilverTopCoverage:P3}{Environment.NewLine}" +
                         $"RightBottomCoverage={result.RightSilverBottomCoverage:P3}{Environment.NewLine}" +
-                        $"LeftMissing={result.LeftMaxMissingRatio:P3}{Environment.NewLine}" +
-                        $"RightMissing={result.RightMaxMissingRatio:P3}{Environment.NewLine}" +
-                        $"LeftInnerDefect={result.LeftInnerDefectRatio:P3}{Environment.NewLine}" +
-                        $"RightInnerDefect={result.RightInnerDefectRatio:P3}{Environment.NewLine}" +
-                        $"MaxEdgeSilver={result.EdgeSilverRegion} {result.EdgeSilverRatio:P3}{Environment.NewLine}";
+                        $"LeftInnerDefectArea={result.LeftInnerDefectArea}px{Environment.NewLine}" +
+                        $"RightInnerDefectArea={result.RightInnerDefectArea}px{Environment.NewLine}" +
+                        $"LeftEdgeConcavity={result.LeftMaxEdgeConcavityArea}px/{result.LeftMaxEdgeConcavityDepth:F2}px{Environment.NewLine}" +
+                        $"RightEdgeConcavity={result.RightMaxEdgeConcavityArea}px/{result.RightMaxEdgeConcavityDepth:F2}px{Environment.NewLine}";
 
                     if (!string.IsNullOrWhiteSpace(outputPath))
                     {

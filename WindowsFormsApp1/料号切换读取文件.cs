@@ -14,7 +14,8 @@ namespace WindowsFormsApp1
         public static bool 加载料号到全局变量(string 料号, bool 只显示)
         {
             string normalized = Normalize(料号);
-            if (!获取所有料号().Contains(normalized))
+            if (!获取所有料号().Contains(
+                normalized, StringComparer.OrdinalIgnoreCase))
                 return false;
 
             if (!只显示)
@@ -36,8 +37,16 @@ namespace WindowsFormsApp1
                 return false;
             }
 
+            if (normalized.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                normalized.Contains("=") || normalized.Contains("\r") ||
+                normalized.Contains("\n"))
+            {
+                消息 = "料号包含不允许的字符";
+                return false;
+            }
+
             List<string> materials = 获取所有料号();
-            if (materials.Contains(normalized))
+            if (materials.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             {
                 消息 = "料号已存在";
                 return false;
@@ -58,7 +67,7 @@ namespace WindowsFormsApp1
         {
             string material = Normalize(数据变量.料号名称);
             List<string> materials = 获取所有料号();
-            if (!materials.Contains(material))
+            if (!materials.Contains(material, StringComparer.OrdinalIgnoreCase))
             {
                 materials.Add(material);
                 SaveMaterials(materials);
@@ -72,13 +81,37 @@ namespace WindowsFormsApp1
         {
             string normalized = Normalize(料号);
             List<string> materials = 获取所有料号();
-            if (!materials.Remove(normalized))
+            int index = materials.FindIndex(x => string.Equals(
+                x, normalized, StringComparison.OrdinalIgnoreCase));
+            if (index < 0)
             {
                 消息 = "料号不存在";
                 return false;
             }
+            string removed = materials[index];
+            materials.RemoveAt(index);
+            if (materials.Count == 0)
+                materials.Add("默认料号");
             SaveMaterials(materials);
-            消息 = "料号删除成功";
+
+            bool removedCurrent = string.Equals(
+                数据变量.料号名称,
+                removed,
+                StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(
+                    Properties.Settings.Default.当前料号,
+                    removed,
+                    StringComparison.OrdinalIgnoreCase);
+            if (removedCurrent)
+            {
+                string next = materials[0];
+                加载料号到全局变量(next, false);
+                消息 = $"料号删除成功，当前料号已切换为：{next}";
+            }
+            else
+            {
+                消息 = "料号删除成功";
+            }
             return true;
         }
 
@@ -94,7 +127,8 @@ namespace WindowsFormsApp1
                 if (!line.StartsWith("料号=", StringComparison.Ordinal))
                     continue;
                 string material = Normalize(line.Substring("料号=".Length));
-                if (!string.IsNullOrWhiteSpace(material) && !result.Contains(material))
+                if (!string.IsNullOrWhiteSpace(material) &&
+                    !result.Contains(material, StringComparer.OrdinalIgnoreCase))
                     result.Add(material);
             }
             return result;
@@ -102,13 +136,16 @@ namespace WindowsFormsApp1
 
         public static bool 检查料号是否存在(string 料号)
         {
-            return 获取所有料号().Contains(Normalize(料号));
+            return 获取所有料号().Contains(
+                Normalize(料号), StringComparer.OrdinalIgnoreCase);
         }
 
         private static void SaveMaterials(IEnumerable<string> materials)
         {
             var lines = new List<string>();
-            foreach (string material in materials.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct())
+            foreach (string material in materials
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase))
             {
                 lines.Add("[料号开始]");
                 lines.Add("料号=" + Normalize(material));

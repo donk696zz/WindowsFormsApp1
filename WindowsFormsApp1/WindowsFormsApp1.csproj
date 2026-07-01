@@ -38,9 +38,6 @@
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="检测模型\silver_normal_model.bin" Condition="Exists('检测模型\silver_normal_model.bin')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
     <Reference Include="HslCommunication, Version=11.7.0.0, Culture=neutral, PublicKeyToken=3d72ad3b6b5ec0e3, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>bin\Debug\HslCommunication.dll</HintPath>

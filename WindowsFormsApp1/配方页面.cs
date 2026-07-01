@@ -65,23 +65,10 @@ namespace WindowsFormsApp1
             string material = materialComboBox.SelectedItem?.ToString();
             if (string.IsNullOrWhiteSpace(material)) return;
 
-            数据变量.料号名称 = material;
-            Properties.Settings.Default.当前料号 = material;
-            Properties.Settings.Default.Save();
             currentProfile = VisionParameterStore.LoadMaterial(material).Clone();
-            底层页面.canshujiemian?.刷新当前料号显示();
             BindRegionControls();
-
-            if (!string.IsNullOrWhiteSpace(currentProfile.ReferenceImagePath) &&
-                File.Exists(currentProfile.ReferenceImagePath))
-            {
-                LoadImage(currentProfile.ReferenceImagePath);
-            }
-            else
-            {
-                RefreshPreview();
-            }
-            statusLabel.Text = $"当前料号：{material}。框参数修改后点击“保存检测图”。";
+            ClearSelectedImage();
+            statusLabel.Text = $"当前料号：{material}。请先点击“选择检测图”。";
         }
 
         private void selectImageButton_Click(object sender, EventArgs e)
@@ -111,6 +98,17 @@ namespace WindowsFormsApp1
                 LogAdded?.Invoke(0, "检测图加载失败：" + ex.Message);
                 statusLabel.Text = "检测图加载失败";
             }
+        }
+
+        private void ClearSelectedImage()
+        {
+            currentAnnotatedImage?.Dispose();
+            currentAnnotatedImage = null;
+            currentImage?.Dispose();
+            currentImage = null;
+            Image old = imagePictureBox.Image;
+            imagePictureBox.Image = null;
+            old?.Dispose();
         }
 
         private void saveDetectionImageButton_Click(object sender, EventArgs e)
@@ -161,8 +159,13 @@ namespace WindowsFormsApp1
             try
             {
                 currentAnnotatedImage?.Dispose();
-                ModuleRegionResult regions = ModuleRegionLocator.Locate(currentImage, currentProfile.Regions);
-                currentAnnotatedImage = ModuleRegionLocator.DrawRegions(currentImage, regions);
+                ModuleRegionResult regions;
+                using (Mat aligned = ModuleRegionLocator.AlignToModule(
+                    currentImage, currentProfile.Regions, out double _))
+                {
+                    regions = ModuleRegionLocator.Locate(aligned, currentProfile.Regions);
+                    currentAnnotatedImage = ModuleRegionLocator.DrawRegions(aligned, regions);
+                }
                 ShowImage(currentAnnotatedImage);
                 statusLabel.Text = $"产品框：X={regions.ModuleBox.X}, Y={regions.ModuleBox.Y}, " +
                     $"W={regions.ModuleBox.Width}, H={regions.ModuleBox.Height}";

@@ -174,7 +174,7 @@ namespace WindowsFormsApp1
                         SetResultLabel(result.Decision, resultName);
                         previewModeLabel.Visible = previewMode;
                         if (copyToResultFolder)
-                            CopyImageToResultFolder(当前图片路径, resultName);
+                            SaveResultImage(display, 当前图片路径, result.Decision);
                         if (writeLog)
                         {
                             int logType = result.Decision == ModuleInspectionDecision.Ok ? 1 : 0;
@@ -205,12 +205,24 @@ namespace WindowsFormsApp1
             label1.ForeColor = Color.White;
         }
 
-        private void CopyImageToResultFolder(string imagePath, string resultName)
+        private void SaveResultImage(
+            Mat resultImage,
+            string sourceImagePath,
+            ModuleInspectionDecision decision)
         {
-            string targetDirectory = Path.Combine(当前图片文件夹, resultName);
+            CameraRoleParameters storage = VisionParameterStore.ApplicationParameters.DetectionCamera;
+            string targetDirectory = decision == ModuleInspectionDecision.Ok
+                ? storage.OkImagePath
+                : storage.NgImagePath;
+
+            if (string.IsNullOrWhiteSpace(targetDirectory))
+                throw new InvalidOperationException("请先在参数界面设置调试结果保存路径。");
+
             Directory.CreateDirectory(targetDirectory);
-            string targetPath = CreateUniquePath(Path.Combine(targetDirectory, Path.GetFileName(imagePath)));
-            File.Copy(imagePath, targetPath);
+            string targetPath = CreateUniquePath(Path.Combine(
+                targetDirectory,
+                Path.GetFileName(sourceImagePath)));
+            OpenCvImageHelper.SaveImage(resultImage, targetPath);
         }
 
         private static string CreateUniquePath(string path)

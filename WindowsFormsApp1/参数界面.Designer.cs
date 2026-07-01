@@ -108,7 +108,7 @@ namespace WindowsFormsApp1
             this.advancedTab.Controls.Add(this.advancedFlowPanel);
             this.advancedTab.Text = "图像处理高级";
             this.cameraStorageTab.Controls.Add(this.cameraStorageFlowPanel);
-            this.cameraStorageTab.Text = "相机与存储";
+            this.cameraStorageTab.Text = "调试结果存储";
             this.systemTab.Controls.Add(this.systemFlowPanel);
             this.systemTab.Text = "系统";
             // flow panels

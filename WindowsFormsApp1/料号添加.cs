@@ -81,8 +81,17 @@ namespace WindowsFormsApp1
             if (string.IsNullOrWhiteSpace(material)) return;
             if (MessageBox.Show("确定删除料号“" + material + "”？", "删除料号",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-            料号切换读取文件.删除料号(material, out string message);
+            bool deleted = 料号切换读取文件.删除料号(
+                material, out string message);
             刷新料号列表();
+            if (deleted)
+            {
+                string current = 数据变量.料号名称;
+                if (!string.IsNullOrWhiteSpace(current) &&
+                    materialListBox.Items.Contains(current))
+                    materialListBox.SelectedItem = current;
+                NotifyMaterialChanged();
+            }
             statusLabel.Text = message;
         }
 
